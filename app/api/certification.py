@@ -32,6 +32,7 @@ class CertificationCreate(BaseModel):
     fields: Dict[str, Any]
     photo_file_id: Optional[str] = None
     logo_file_id: Optional[str] = None
+    rear_logo_file_id: Optional[str] = None
 
 
 @router.post("", status_code=201)
@@ -55,6 +56,11 @@ async def create_certification(
         if payload.logo_file_id
         else None
     )
+    rear_logo_url = (
+        promote_file_from_temp(payload.rear_logo_file_id)
+        if payload.rear_logo_file_id
+        else None
+    )
 
     now = datetime.utcnow()
     doc = {
@@ -64,6 +70,7 @@ async def create_certification(
         "fields": payload.fields,
         "photo_url": photo_url,
         "brand_logo_url": logo_url,
+        "rear_brand_logo_url": rear_logo_url,
         "is_deleted": False,
         "created_at": now,
         "updated_at": now,
@@ -91,8 +98,10 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
             # Promote images if available
             photo_url = promote_file_from_temp(cert.get("photo_file_id")) if cert.get("photo_file_id") else None
             logo_url = promote_file_from_temp(cert.get("logo_file_id")) if cert.get("logo_file_id") else None
+            rear_logo_url = promote_file_from_temp(cert.get("rear_logo_file_id")) if cert.get("rear_logo_file_id") else None
             if photo_url: promoted_files.append(("certificates", photo_url.split("/", 1)[1]))
             if logo_url: promoted_files.append(("certificates", logo_url.split("/", 1)[1]))
+            if rear_logo_url: promoted_files.append(("certificates", rear_logo_url.split("/", 1)[1]))
 
             inserted_docs.append({
                 "uuid": str(uuid.uuid4()),
@@ -101,6 +110,7 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
                 "fields": cert.get("fields", {}),
                 "photo_url": photo_url,
                 "brand_logo_url": logo_url,
+                "rear_brand_logo_url": rear_logo_url,
                 "is_deleted": False,
                 "created_at": now,
                 "updated_at": now
@@ -144,6 +154,14 @@ def attach_presigned_urls(doc):
             doc["brand_logo_signed_url"] = get_presigned_url(bucket, file_id)
         except:
             doc["brand_logo_signed_url"] = None
+
+    # Rear Logo
+    if doc.get("rear_brand_logo_url"):
+        try:
+            bucket, file_id = doc["rear_brand_logo_url"].split("/", 1)
+            doc["rear_brand_logo_signed_url"] = get_presigned_url(bucket, file_id)
+        except:
+            doc["rear_brand_logo_signed_url"] = None
 
     return doc
 
