@@ -28,15 +28,28 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
+    # Validate manufacturer if provided
+    if payload.manufacturer_id:
+        manufacturer = await db.manufacturers.find_one({"uuid": payload.manufacturer_id, "is_deleted": False})
+        if not manufacturer:
+            raise HTTPException(status_code=404, detail="Manufacturer not found")
+
     now = datetime.utcnow()
     job_no = await next_job_number()
+    
+    # Use received_datetime if provided, otherwise use received_date, otherwise use now
+    received_dt = payload.received_datetime or payload.received_date or now
 
     doc = {
         "uuid": str(uuid.uuid4()),
         "job_number": job_no,
         "client_id": payload.client_id,
+        "manufacturer_id": payload.manufacturer_id,
         "item_type": payload.item_type,
         "item_description": payload.item_description,
+        "item_quantity": payload.item_quantity,
+        "item_weight": payload.item_weight,
+        "item_size": payload.item_size,
         "priority": payload.priority,
         "status": "pending",
         "work_progress": {
@@ -44,7 +57,8 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
             "rfd": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
             "photography": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
         },
-        "received_date": payload.received_date or now,
+        "received_date": received_dt,  # Keep for backward compatibility
+        "received_datetime": payload.received_datetime or received_dt,
         "received_from_name": payload.received_from_name,
         "expected_delivery_date": payload.expected_delivery_date,
         "actual_delivery_date": None,
@@ -113,14 +127,28 @@ async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
 
+    # Validate manufacturer if provided
+    if payload.manufacturer_id is not None:
+        if payload.manufacturer_id:
+            manufacturer = await db.manufacturers.find_one({"uuid": payload.manufacturer_id, "is_deleted": False})
+            if not manufacturer:
+                raise HTTPException(status_code=404, detail="Manufacturer not found")
+
     updates = {}
     for field in [
-        "item_type", "item_description", "priority", 
-        "expected_delivery_date", "notes", "received_from_name"
+        "manufacturer_id", "item_type", "item_description", "item_quantity", 
+        "item_weight", "item_size", "priority", 
+        "expected_delivery_date", "received_datetime", "notes", "received_from_name"
     ]:
         val = getattr(payload, field)
         if val is not None:
             updates[field] = val
+
+    # Handle received_date for backward compatibility
+    if payload.received_date is not None:
+        updates["received_date"] = payload.received_date
+        if "received_datetime" not in updates:
+            updates["received_datetime"] = payload.received_date
 
     updates["updated_at"] = datetime.utcnow()
     await db.jobs.update_one({"_id": doc["_id"]}, {"$set": updates})

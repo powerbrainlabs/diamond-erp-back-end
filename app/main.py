@@ -7,9 +7,11 @@ from .db.database import init_db, get_db
 from .api.auth import router as auth_router
 from .api.jobs import router as jobs_router
 from .api.clients import router as client_router
+from .api.manufacturers import router as manufacturers_router
 from .api.files import router as files_router
 from .api.certification import router as certification_router
 from .api.categories import router as category_router
+from .api.qc_reports import router as qc_reports_router
 
 from .core.security import hash_password
 
@@ -44,9 +46,11 @@ async def startup_event():
 app.include_router(auth_router)
 app.include_router(jobs_router)
 app.include_router(client_router)
+app.include_router(manufacturers_router)
 app.include_router(files_router)
 app.include_router(certification_router)
 app.include_router(category_router)
+app.include_router(qc_reports_router)
 
 @app.get("/")
 async def root():

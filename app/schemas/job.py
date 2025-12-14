@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from datetime import date, datetime
 
-ItemType = Literal["diamond", "jewelry", "gemstone"]
+ItemType = Literal["diamond", "jewelry", "gemstone", "loose_diamond"]
 Status = Literal["pending", "qc", "rfd", "photography", "certification", "completed"]
 Priority = Literal["low", "medium", "high", "urgent"]
 
@@ -12,11 +12,16 @@ StageStatus = Literal["pending", "in_progress", "done"]
 
 class JobCreate(BaseModel):
     client_id: str
-    item_type: Literal["diamond", "jewelry", "gemstone"]
+    manufacturer_id: Optional[str] = None  # Optional manufacturer
+    item_type: Literal["diamond", "jewelry", "gemstone", "loose_diamond"]
     item_description: str
+    item_quantity: Optional[int] = None  # For non-loose diamond items
+    item_weight: Optional[float] = None  # For loose diamond (in carats)
+    item_size: Optional[str] = None  # For loose diamond (e.g., "5mm x 5mm")
     priority: Literal["low", "medium", "high", "urgent"] = "medium"
     expected_delivery_date: Optional[datetime] = None
-    received_date: Optional[datetime] = None
+    received_date: Optional[datetime] = None  # Keep for backward compatibility
+    received_datetime: Optional[datetime] = None  # New field with date and time
     received_from_name: Optional[str] = None
     notes: Optional[str] = None
 
@@ -32,12 +37,17 @@ class JobResponse(BaseModel):
 class JobUpdate(BaseModel):
     client_name: Optional[str] = Field(default=None, min_length=2)
     client_contact: Optional[str] = Field(default=None, min_length=10, max_length=15)
+    manufacturer_id: Optional[str] = None
     item_type: Optional[ItemType] = None
     item_description: Optional[str] = None
+    item_quantity: Optional[int] = None
+    item_weight: Optional[float] = None
+    item_size: Optional[str] = None
     status: Optional[Status] = None
     assigned_to: Optional[str] = None  # user_id
     priority: Optional[Priority] = None
     received_date: Optional[datetime] = None
+    received_datetime: Optional[datetime] = None
     expected_delivery_date: Optional[date] = None
     actual_delivery_date: Optional[datetime] = None
     notes: Optional[str] = None

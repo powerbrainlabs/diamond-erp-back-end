@@ -39,6 +39,23 @@ def dump_client(doc):
         "updated_at": doc["updated_at"],
     }
 
+def dump_manufacturer(doc):
+    if not doc:
+        return None
+    return {
+        "id": doc["uuid"],
+        "name": doc["name"],
+        "contact_person": doc.get("contact_person"),
+        "email": doc.get("email"),
+        "phone": doc.get("phone"),
+        "address": doc.get("address"),
+        "gst_number": doc.get("gst_number"),
+        "notes": doc.get("notes"),
+        "created_by": doc["created_by"],
+        "created_at": doc["created_at"],
+        "updated_at": doc["updated_at"],
+    }
+
 
 def serialize_mongo_doc(obj: Any) -> Any:
     """
