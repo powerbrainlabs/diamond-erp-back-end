@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # Remove.bg API
     REMOVE_BG_API_KEY: str = "MXua93vfYeGxtuWoJv8xJEmE"
     REMOVE_BG_API_URL: str = "https://api.remove.bg/v1.0/removebg"
+    
+    # Frontend URL for QR codes
+    FRONTEND_URL: str = "http://localhost:5173"
 
 
     class Config:

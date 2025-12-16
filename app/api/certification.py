@@ -9,6 +9,8 @@ from minio.commonconfig import CopySource
 from ..db.database import get_db
 from ..utils.minio_helpers import get_presigned_url
 from ..utils.serializers import serialize_mongo_doc
+from ..utils.qr_generator import save_qr_code_to_minio
+from ..core.config import settings
 
 router = APIRouter(prefix="/api/certifications", tags=["Certifications"])
 
@@ -75,14 +77,25 @@ async def create_certification(
             # File doesn't exist - this is okay, certificate can be created without logo
             print(f"Warning: Logo file {payload.logo_file_id} not found, creating certificate without logo")
 
+    # Generate certificate UUID
+    cert_uuid = str(uuid.uuid4())
+    
+    # Generate QR code URL - use frontend URL from config or default
+    frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+    qr_code_url = f"{frontend_url}/certificate/{cert_uuid}"
+    
+    # Generate and save QR code to MinIO
+    qr_code_url_path = save_qr_code_to_minio(cert_uuid, qr_code_url, size=200)
+    
     now = datetime.utcnow()
     doc = {
-        "uuid": str(uuid.uuid4()),
+        "uuid": cert_uuid,
         "type": payload.type,
         "client_id": payload.client_id,
         "fields": payload.fields,
         "photo_url": photo_url,
         "brand_logo_url": logo_url,
+        "qr_code_url": qr_code_url_path,  # Store QR code path in MinIO
         "photo_edit_completed": payload.photo_edit_completed or False,
         "is_deleted": False,
         "created_at": now,
@@ -114,13 +127,24 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
             if photo_url: promoted_files.append(("certificates", photo_url.split("/", 1)[1]))
             if logo_url: promoted_files.append(("certificates", logo_url.split("/", 1)[1]))
 
+            # Generate certificate UUID
+            cert_uuid = str(uuid.uuid4())
+            
+            # Generate QR code URL
+            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+            qr_code_url = f"{frontend_url}/certificate/{cert_uuid}"
+            
+            # Generate and save QR code to MinIO
+            qr_code_url_path = save_qr_code_to_minio(cert_uuid, qr_code_url, size=200)
+            
             inserted_docs.append({
-                "uuid": str(uuid.uuid4()),
+                "uuid": cert_uuid,
                 "type": cert["type"],
                 "client_id": cert["client_id"],
                 "fields": cert.get("fields", {}),
                 "photo_url": photo_url,
                 "brand_logo_url": logo_url,
+                "qr_code_url": qr_code_url_path,
                 "is_deleted": False,
                 "created_at": now,
                 "updated_at": now
@@ -147,7 +171,7 @@ ALLOWED_SORTS = {
 
 def attach_presigned_urls(doc):
     """
-    Inject presigned URLs for photo & logo if present.
+    Inject presigned URLs for photo, logo, and QR code if present.
     """
     # Photo
     if doc.get("photo_url"):
@@ -164,6 +188,14 @@ def attach_presigned_urls(doc):
             doc["brand_logo_signed_url"] = get_presigned_url(bucket, file_id)
         except:
             doc["brand_logo_signed_url"] = None
+
+    # QR Code
+    if doc.get("qr_code_url"):
+        try:
+            bucket, file_id = doc["qr_code_url"].split("/", 1)
+            doc["qr_code_signed_url"] = get_presigned_url(bucket, file_id)
+        except:
+            doc["qr_code_signed_url"] = None
 
     return doc
 
@@ -232,3 +264,21 @@ async def list_certifications(
         "has_prev": page > 1,
         "data": items,
     }
+
+
+@router.get("/{uuid}")
+async def get_certification(uuid: str):
+    """
+    Get a single certificate by UUID (public endpoint for QR code viewing)
+    """
+    db = await get_db()
+    doc = await db.certifications.find_one({"uuid": uuid, "is_deleted": False})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Certification not found")
+    
+    serialized = serialize_mongo_doc(doc)
+    
+    # Add presigned URLs
+    serialized = attach_presigned_urls(serialized)
+    
+    return serialized
