@@ -1,11 +1,14 @@
 import io
+import httpx
 from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import Response
 from datetime import datetime
 import uuid
 
 from app.utils.minio_helpers import get_presigned_url
 from ..core.minio_client import minio_client
+from ..core.config import settings
 
 router = APIRouter(prefix="/api/files", tags=["Files"])
 
@@ -56,3 +59,41 @@ async def get_presigned_file(bucket: str, file_id: str):
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/remove-background")
+async def remove_background(image: UploadFile = File(...)):
+    """
+    Remove background from image using remove.bg API
+    Returns the processed image as PNG
+    """
+    try:
+        # Read image bytes
+        image_bytes = await image.read()
+        
+        # Call remove.bg API
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                settings.REMOVE_BG_API_URL,
+                files={"image_file": (image.filename, image_bytes, image.content_type)},
+                data={"size": "auto"},
+                headers={"X-Api-Key": settings.REMOVE_BG_API_KEY}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Remove.bg API error: {response.text}"
+                )
+            
+            # Return the processed image
+            return Response(
+                content=response.content,
+                media_type="image/png",
+                headers={"Content-Disposition": "attachment; filename=no-bg.png"}
+            )
+            
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Background removal request timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Background removal failed: {str(e)}")

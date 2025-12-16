@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_USE_TLS: bool = False
 
+    # Remove.bg API
+    REMOVE_BG_API_KEY: str = "MXua93vfYeGxtuWoJv8xJEmE"
+    REMOVE_BG_API_URL: str = "https://api.remove.bg/v1.0/removebg"
+
 
     class Config:
         env_file = ".env"

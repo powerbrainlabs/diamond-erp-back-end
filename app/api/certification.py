@@ -14,15 +14,29 @@ router = APIRouter(prefix="/api/certifications", tags=["Certifications"])
 
 
 def promote_file_from_temp(file_id: str) -> str:
+    """
+    Move file from cert-temp → certificates bucket and return permanent URL.
+    Returns None if file doesn't exist (graceful handling).
+    """
     src_bucket = "cert-temp"
     dest_bucket = "certificates"
     try:
+        # Check if file exists before trying to copy
+        try:
+            minio_client.stat_object(src_bucket, file_id)
+        except Exception as stat_err:
+            # File doesn't exist - return None instead of raising error
+            print(f"Warning: File {file_id} not found in {src_bucket}: {stat_err}")
+            return None
+        
         source = CopySource(src_bucket, file_id)
         minio_client.copy_object(dest_bucket, file_id, source)
         minio_client.remove_object(src_bucket, file_id)
         return f"{dest_bucket}/{file_id}"
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File move failed: {str(e)}")
+        # If copy fails, don't raise error - just return None
+        print(f"Warning: Failed to promote file {file_id}: {str(e)}")
+        return None
 
 
 # 🧱 Single Create (still valid for diamond)
@@ -32,6 +46,7 @@ class CertificationCreate(BaseModel):
     fields: Dict[str, Any]
     photo_file_id: Optional[str] = None
     logo_file_id: Optional[str] = None
+    photo_edit_completed: Optional[bool] = False
 
 
 @router.post("", status_code=201)
@@ -45,16 +60,20 @@ async def create_certification(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    photo_url = (
-        promote_file_from_temp(payload.photo_file_id)
-        if payload.photo_file_id
-        else None
-    )
-    logo_url = (
-        promote_file_from_temp(payload.logo_file_id)
-        if payload.logo_file_id
-        else None
-    )
+    # Promote files only if file_id is provided and file exists
+    photo_url = None
+    if payload.photo_file_id:
+        photo_url = promote_file_from_temp(payload.photo_file_id)
+        if not photo_url:
+            # File doesn't exist - this is okay, certificate can be created without photo
+            print(f"Warning: Photo file {payload.photo_file_id} not found, creating certificate without photo")
+    
+    logo_url = None
+    if payload.logo_file_id:
+        logo_url = promote_file_from_temp(payload.logo_file_id)
+        if not logo_url:
+            # File doesn't exist - this is okay, certificate can be created without logo
+            print(f"Warning: Logo file {payload.logo_file_id} not found, creating certificate without logo")
 
     now = datetime.utcnow()
     doc = {
@@ -64,6 +83,7 @@ async def create_certification(
         "fields": payload.fields,
         "photo_url": photo_url,
         "brand_logo_url": logo_url,
+        "photo_edit_completed": payload.photo_edit_completed or False,
         "is_deleted": False,
         "created_at": now,
         "updated_at": now,
