@@ -8,6 +8,8 @@ from ..core.dependencies import require_admin
 from ..core.security import hash_password, verify_password
 from ..db.database import get_db
 from ..utils.serializers import dump_user
+from ..utils.action_logger import auto_log_action
+from fastapi import Request
 
 router = APIRouter(prefix="/api/staff", tags=["Staff"])
 
@@ -27,7 +29,8 @@ class StaffUpdate(BaseModel):
 @router.post("", status_code=201)
 async def create_staff(
     payload: StaffCreate,
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(require_admin),
+    _: None = Depends(auto_log_action),  # Automatic logging
 ):
     """Create a new staff member (admin only)"""
     db = await get_db()
@@ -50,7 +53,11 @@ async def create_staff(
     
     res = await db.users.insert_one(doc)
     created = await db.users.find_one({"_id": res.inserted_id})
-    return dump_user(created)
+    result = dump_user(created)
+    
+    # No logging code needed - auto_log_action handles it automatically!
+    
+    return result
 
 @router.get("")
 async def list_staff(
@@ -116,7 +123,8 @@ async def get_staff(
 async def update_staff(
     staff_id: str,
     payload: StaffUpdate,
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(require_admin),
+    _: None = Depends(auto_log_action),  # Automatic logging
 ):
     """Update a staff member or admin (admin only)"""
     db = await get_db()
@@ -159,7 +167,8 @@ async def update_staff(
 @router.delete("/{staff_id}")
 async def delete_staff(
     staff_id: str,
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(require_admin),
+    _: None = Depends(auto_log_action),  # Automatic logging
 ):
     """Delete (deactivate) a staff member or admin (admin only)"""
     db = await get_db()
@@ -177,6 +186,8 @@ async def delete_staff(
         {"_id": ObjectId(staff_id)},
         {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
     )
+    
+    # No logging code needed - auto_log_action handles it automatically!
     
     return {"message": "Staff member deactivated successfully"}
 

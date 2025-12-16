@@ -32,6 +32,12 @@ async def init_db():
     # Tokens blacklist
     await db.tokens_blacklist.create_index([("jti", ASCENDING)], unique=True)
 
+    # Action history indexes
+    await db.action_history.create_index([("user_id", ASCENDING)])
+    await db.action_history.create_index([("action_type", ASCENDING)])
+    await db.action_history.create_index([("resource_type", ASCENDING)])
+    await db.action_history.create_index([("created_at", DESCENDING)])
+
     # Counters for sequences — no need to index _id
     # await db.counters.create_index([("_id", ASCENDING)], unique=True)  <-- REMOVE THIS LINE
 

@@ -9,6 +9,8 @@ from ..core.dependencies import require_admin, require_staff
 from ..db.database import get_db
 from ..utils.job_number import next_job_number
 from ..utils.serializers import dump_job
+from ..utils.action_logger import auto_log_action
+from fastapi import Depends
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
@@ -20,7 +22,11 @@ ALLOWED_SORTS = {
 
 # ✅ Create Job
 @router.post("", status_code=201)
-async def create_job(payload: JobCreate, current_user: dict = Depends(require_staff)):
+async def create_job(
+    payload: JobCreate, 
+    current_user: dict = Depends(require_staff),
+    _: None = Depends(auto_log_action),  # Automatic logging - no logic needed!
+):
     db = await get_db()
 
     # Validate client
@@ -74,7 +80,11 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
     }
 
     await db.jobs.insert_one(doc)
-    return dump_job(doc)
+    result = dump_job(doc)
+    
+    # No logging code needed - auto_log_action handles it automatically!
+    
+    return result
 
 # ✅ List Jobs (with pagination, sorting, and filters)
 @router.get("")
@@ -121,7 +131,12 @@ async def get_job(uuid: str, current_user: dict = Depends(require_staff)):
 
 # ✅ Update Job Info
 @router.put("/{uuid}")
-async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends(require_staff)):
+async def update_job(
+    uuid: str, 
+    payload: JobUpdate, 
+    current_user: dict = Depends(require_staff),
+    _: None = Depends(auto_log_action),  # Automatic logging
+):
     db = await get_db()
     doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
@@ -153,7 +168,11 @@ async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends
     updates["updated_at"] = datetime.utcnow()
     await db.jobs.update_one({"_id": doc["_id"]}, {"$set": updates})
     fresh = await db.jobs.find_one({"_id": doc["_id"]})
-    return dump_job(fresh)
+    result = dump_job(fresh)
+    
+    # No logging code needed - auto_log_action handles it automatically!
+    
+    return result
 
 # ✅ Update Stage Progress (QA, RFD, Photography)
 @router.patch("/{uuid}/progress/{stage}")
@@ -233,7 +252,11 @@ async def update_job_status(
 
 # ✅ Soft Delete
 @router.delete("/{uuid}")
-async def delete_job(uuid: str, current_user: dict = Depends(require_admin)):
+async def delete_job(
+    uuid: str, 
+    current_user: dict = Depends(require_admin),
+    _: None = Depends(auto_log_action),  # Automatic logging
+):
     db = await get_db()
     doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
@@ -242,6 +265,9 @@ async def delete_job(uuid: str, current_user: dict = Depends(require_admin)):
         {"_id": doc["_id"]},
         {"$set": {"is_deleted": True, "updated_at": datetime.utcnow()}},
     )
+    
+    # No logging code needed - auto_log_action handles it automatically!
+    
     return {"detail": "Job deleted"}
 
 # ✅ Stats: Overview
