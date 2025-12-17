@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
 import uuid
 
@@ -187,4 +187,55 @@ async def delete_qc_report(
         {"$set": {"is_deleted": True, "updated_at": datetime.utcnow()}}
     )
     return {"detail": "QC Report deleted"}
+
+
+# ✅ Stats: Overview
+@router.get("/qc/stats")
+async def qc_report_stats(current_user: dict = Depends(require_staff)):
+    """
+    Get QC report statistics
+    """
+    db = await get_db()
+    
+    pipeline = [
+        {"$match": {"is_deleted": False}},
+        {"$facet": {
+            "total": [{"$count": "count"}],
+            "created_today": [
+                {"$match": {"created_at": {"$gte": datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)}}},
+                {"$count": "count"}
+            ],
+            "created_this_week": [
+                {"$match": {"created_at": {"$gte": datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=7)}}},
+                {"$count": "count"}
+            ],
+        }}
+    ]
+    res = await db.qc_reports.aggregate(pipeline).to_list(1)
+    agg = res[0] if res else {}
+    
+    def _get(lst): return lst[0]["count"] if lst else 0
+    
+    return {
+        "total_reports": _get(agg.get("total", [])),
+        "created_today": _get(agg.get("created_today", [])),
+        "created_this_week": _get(agg.get("created_this_week", [])),
+    }
+
+
+# ✅ Stats: Daily QC Report Count
+@router.get("/qc/stats/daily")
+async def qc_report_stats_daily(current_user: dict = Depends(require_staff)):
+    """
+    Get daily QC report creation count
+    """
+    db = await get_db()
+    pipeline = [
+        {"$match": {"is_deleted": False}},
+        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$sum": 1}}},
+        {"$sort": {"_id": 1}},
+        {"$limit": 30}  # Last 30 days
+    ]
+    res = await db.qc_reports.aggregate(pipeline).to_list(None)
+    return {"daily": res}
 

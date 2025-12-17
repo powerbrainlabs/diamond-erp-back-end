@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, Literal
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
 import uuid
 
@@ -305,6 +305,40 @@ async def job_stats_daily(current_user: dict = Depends(require_staff)):
         {"$match": {"is_deleted": False}},
         {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$count": {}}}},
         {"$sort": {"_id": 1}},
+        {"$limit": 30}  # Last 30 days
     ]
     res = await db.jobs.aggregate(pipeline).to_list(None)
     return {"daily": res}
+
+
+# ✅ Get Upcoming Deliveries
+@router.get("/upcoming-deliveries")
+async def get_upcoming_deliveries(
+    current_user: dict = Depends(require_staff),
+    days: int = Query(7, ge=1, le=30)
+):
+    """
+    Get jobs with delivery dates in the next N days or overdue
+    """
+    db = await get_db()
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    future_date = today + timedelta(days=days)
+    
+    # Get overdue jobs (past delivery date, not completed)
+    overdue = await db.jobs.find({
+        "is_deleted": False,
+        "status": {"$ne": "completed"},
+        "expected_delivery_date": {"$lt": today}
+    }).sort("expected_delivery_date", 1).limit(20).to_list(None)
+    
+    # Get upcoming deliveries
+    upcoming = await db.jobs.find({
+        "is_deleted": False,
+        "status": {"$ne": "completed"},
+        "expected_delivery_date": {"$gte": today, "$lte": future_date}
+    }).sort("expected_delivery_date", 1).limit(20).to_list(None)
+    
+    return {
+        "overdue": [dump_job(doc) for doc in overdue],
+        "upcoming": [dump_job(doc) for doc in upcoming],
+    }

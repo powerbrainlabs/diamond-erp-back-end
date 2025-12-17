@@ -12,6 +12,7 @@ from ..utils.serializers import serialize_mongo_doc
 from ..utils.qr_generator import save_qr_code_to_minio
 from ..utils.certificate_number import next_certificate_number
 from ..core.config import settings
+from ..core.dependencies import require_staff
 
 router = APIRouter(prefix="/api/certifications", tags=["Certifications"])
 
@@ -301,3 +302,56 @@ async def get_certification(uuid: str):
     serialized = attach_presigned_urls(serialized)
     
     return serialized
+
+
+# ✅ Stats: Overview
+@router.get("/stats")
+async def certificate_stats(current_user: dict = Depends(require_staff)):
+    """
+    Get certificate statistics
+    """
+    db = await get_db()
+    
+    pipeline = [
+        {"$match": {"is_deleted": False}},
+        {"$facet": {
+            "total": [{"$count": "count"}],
+            "by_type": [{"$group": {"_id": "$type", "count": {"$sum": 1}}}],
+            "created_today": [
+                {"$match": {"created_at": {"$gte": datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)}}},
+                {"$count": "count"}
+            ],
+            "pending_photo_edit": [
+                {"$match": {"photo_edit_completed": False, "photo_url": {"$ne": None}}},
+                {"$count": "count"}
+            ],
+        }}
+    ]
+    res = await db.certifications.aggregate(pipeline).to_list(1)
+    agg = res[0] if res else {}
+    
+    def _get(lst): return lst[0]["count"] if lst else 0
+    
+    return {
+        "total_certificates": _get(agg.get("total", [])),
+        "by_type": {d["_id"]: d["count"] for d in agg.get("by_type", [])},
+        "created_today": _get(agg.get("created_today", [])),
+        "pending_photo_edit": _get(agg.get("pending_photo_edit", [])),
+    }
+
+
+# ✅ Stats: Daily Certificate Count
+@router.get("/stats/daily")
+async def certificate_stats_daily(current_user: dict = Depends(require_staff)):
+    """
+    Get daily certificate creation count
+    """
+    db = await get_db()
+    pipeline = [
+        {"$match": {"is_deleted": False}},
+        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$sum": 1}}},
+        {"$sort": {"_id": 1}},
+        {"$limit": 30}  # Last 30 days
+    ]
+    res = await db.certifications.aggregate(pipeline).to_list(None)
+    return {"daily": res}

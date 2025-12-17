@@ -14,6 +14,7 @@ from .api.categories import router as category_router
 from .api.qc_reports import router as qc_reports_router
 from .api.staff import router as staff_router
 from .api.action_history import router as action_history_router
+from .api.dashboard import router as dashboard_router
 
 from .core.security import hash_password
 
@@ -55,6 +56,7 @@ app.include_router(category_router)
 app.include_router(qc_reports_router)
 app.include_router(staff_router)
 app.include_router(action_history_router)
+app.include_router(dashboard_router)
 
 @app.get("/")
 async def root():
