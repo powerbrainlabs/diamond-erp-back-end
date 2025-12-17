@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from bson import ObjectId
 import uuid
 
 from ..core.dependencies import require_staff, require_admin
@@ -10,6 +11,16 @@ router = APIRouter(prefix="/api/reports", tags=["QC Reports"])
 
 def serialize_qc_report(doc):
     """Serialize QC report document"""
+    if not doc:
+        return None
+    
+    # Serialize created_by to handle ObjectId in user_id
+    created_by = doc.get("created_by", {})
+    if created_by and isinstance(created_by, dict):
+        created_by = created_by.copy()
+        if isinstance(created_by.get("user_id"), ObjectId):
+            created_by["user_id"] = str(created_by["user_id"])
+    
     return {
         "id": str(doc.get("uuid")),
         "uuid": str(doc.get("uuid")),
@@ -22,9 +33,9 @@ def serialize_qc_report(doc):
         "city": doc.get("city"),
         "summary_note": doc.get("summary_note"),
         "ocr_no": doc.get("ocr_no"),
-        "created_by": doc.get("created_by"),
-        "created_at": doc.get("created_at"),
-        "updated_at": doc.get("updated_at"),
+        "created_by": created_by,
+        "created_at": doc.get("created_at").isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at"),
+        "updated_at": doc.get("updated_at").isoformat() if isinstance(doc.get("updated_at"), datetime) else doc.get("updated_at"),
     }
 
 # ✅ Create QC Report

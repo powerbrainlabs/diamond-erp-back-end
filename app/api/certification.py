@@ -10,6 +10,7 @@ from ..db.database import get_db
 from ..utils.minio_helpers import get_presigned_url
 from ..utils.serializers import serialize_mongo_doc
 from ..utils.qr_generator import save_qr_code_to_minio
+from ..utils.certificate_number import next_certificate_number
 from ..core.config import settings
 
 router = APIRouter(prefix="/api/certifications", tags=["Certifications"])
@@ -80,6 +81,9 @@ async def create_certification(
     # Generate certificate UUID
     cert_uuid = str(uuid.uuid4())
     
+    # Generate certificate number
+    cert_number = await next_certificate_number()
+    
     # Generate QR code URL - use frontend URL from config or default
     frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
     qr_code_url = f"{frontend_url}/certificate/{cert_uuid}"
@@ -87,12 +91,18 @@ async def create_certification(
     # Generate and save QR code to MinIO
     qr_code_url_path = save_qr_code_to_minio(cert_uuid, qr_code_url, size=200)
     
+    # Add certificate number to fields if not already present
+    fields_with_cert_no = payload.fields.copy() if payload.fields else {}
+    if "certificate_no" not in fields_with_cert_no and "certificate_number" not in fields_with_cert_no:
+        fields_with_cert_no["certificate_no"] = cert_number
+        fields_with_cert_no["certificate_number"] = cert_number
+    
     now = datetime.utcnow()
     doc = {
         "uuid": cert_uuid,
         "type": payload.type,
         "client_id": payload.client_id,
-        "fields": payload.fields,
+        "fields": fields_with_cert_no,
         "photo_url": photo_url,
         "brand_logo_url": logo_url,
         "qr_code_url": qr_code_url_path,  # Store QR code path in MinIO
@@ -130,6 +140,9 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
             # Generate certificate UUID
             cert_uuid = str(uuid.uuid4())
             
+            # Generate certificate number
+            cert_number = await next_certificate_number()
+            
             # Generate QR code URL
             frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
             qr_code_url = f"{frontend_url}/certificate/{cert_uuid}"
@@ -137,11 +150,17 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
             # Generate and save QR code to MinIO
             qr_code_url_path = save_qr_code_to_minio(cert_uuid, qr_code_url, size=200)
             
+            # Add certificate number to fields if not already present
+            fields_with_cert_no = cert.get("fields", {}).copy()
+            if "certificate_no" not in fields_with_cert_no and "certificate_number" not in fields_with_cert_no:
+                fields_with_cert_no["certificate_no"] = cert_number
+                fields_with_cert_no["certificate_number"] = cert_number
+            
             inserted_docs.append({
                 "uuid": cert_uuid,
                 "type": cert["type"],
                 "client_id": cert["client_id"],
-                "fields": cert.get("fields", {}),
+                "fields": fields_with_cert_no,
                 "photo_url": photo_url,
                 "brand_logo_url": logo_url,
                 "qr_code_url": qr_code_url_path,
