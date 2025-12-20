@@ -26,11 +26,16 @@ The nginx container acts as a reverse proxy and static file server for:
    ```
    **Note**: The API URL should be relative to the nginx server (use `/api` not `http://localhost:8000`)
 
-3. Start nginx (builds frontend and serves it):
+3. Start nginx and frontend:
    ```bash
    cd nginx
    docker-compose up -d
    ```
+   
+   This will:
+   - Build the frontend container
+   - Build the nginx container
+   - Start both services
 
 ### Access Services
 
@@ -43,19 +48,31 @@ The nginx container acts as a reverse proxy and static file server for:
 
 - `nginx.conf`: Main nginx configuration
 - `default.conf`: Server block configuration with upstream definitions for frontend and backend
-- `Dockerfile`: Nginx container build configuration
-- `docker-compose.yml`: Service orchestration (includes frontend build)
+- `Dockerfile`: Nginx container build configuration (nginx only, no frontend build)
+- `docker-compose.yml`: Service orchestration (includes separate frontend service)
 
 ## How It Works
 
-1. **Nginx Container** (multi-stage build):
-   - **Stage 1**: Builds the React frontend application
-   - **Stage 2**: Serves frontend static files directly from nginx
-   - Proxies API requests from `/api/*` to the backend
-   - Handles React Router routing (SPA fallback to index.html)
-   - Serves API documentation at `/docs` and `/redoc`
+1. **Frontend Container**: 
+   - Builds the React application
+   - Serves static files via `serve` (simple HTTP server, port 3000)
+   - Handles React Router routing (SPA mode via `serve -s` flag)
+   - **No nginx needed** - lightweight HTTP server only
 
-**Note**: The frontend is built directly into the nginx container - no separate frontend container needed!
+2. **Nginx Container**: 
+   - Proxies frontend requests to the frontend container (port 3000)
+   - Proxies API requests from `/api/*` to the backend container
+   - Serves API documentation at `/docs` and `/redoc`
+   - Handles caching for static assets
+   - Single entry point on port 80
+   - **Only one nginx instance** - cleaner architecture
+
+**Benefits for CI/CD**:
+- Frontend can be built and deployed independently
+- Faster frontend updates (no need to rebuild nginx)
+- Better separation of concerns
+- Easier to scale services independently
+- Simpler architecture (one nginx, one simple HTTP server)
 
 ## SSL/TLS Setup (for Production)
 
@@ -178,19 +195,23 @@ docker-compose exec nginx nginx -s reload
 
 ## Troubleshooting
 
-### Nginx can't connect to backend
+### Nginx can't connect to backend or frontend
 
 - Ensure backend services are running: `cd .. && docker-compose ps`
 - Check network connectivity: `docker network inspect erp-backend-network`
-- Verify backend container name matches the upstream in `default.conf`: `backend`
+- Verify container names match the upstream definitions in `default.conf`:
+  - `backend` for API
+  - `frontend` for static files
+- Check if frontend container is running: `docker-compose ps`
 
 ### 502 Bad Gateway
 
 - Check if backend is healthy: `docker-compose exec backend curl http://localhost:8000/`
+- Check if frontend is serving files: `docker-compose exec frontend curl http://localhost:80/`
 - Check nginx error logs: `docker-compose logs nginx`
 - Verify network configuration and service dependencies
-- Ensure backend service is running
-- Check if frontend was built correctly: `docker-compose logs nginx | grep -i build`
+- Ensure both backend and frontend services are running
+- Check frontend build logs: `docker-compose logs frontend`
 
 ### Port conflicts
 
