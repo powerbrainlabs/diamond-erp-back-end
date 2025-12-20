@@ -15,27 +15,26 @@ The nginx container acts as a reverse proxy and static file server for:
 
 1. Ensure the backend services are running:
    ```bash
-   cd ..
+   cd ../..
+   cd diamond-erp-back-end
    docker-compose up -d
    ```
 
-2. Set up environment variables (optional):
-   Create a `.env` file in the nginx directory:
-   ```env
-   VITE_API_URL=http://localhost/api
-   ```
-   **Note**: The API URL should be relative to the nginx server (use `/api` not `http://localhost:8000`)
-
-3. Start nginx and frontend:
+2. Start the frontend service (separate compose):
    ```bash
-   cd nginx
+   cd ../diamond-erp-front-end
    docker-compose up -d
    ```
    
-   This will:
-   - Build the frontend container
-   - Build the nginx container
-   - Start both services
+   **Note**: The frontend uses the same network (`erp-backend-network`) so nginx can connect to it.
+
+3. Start nginx:
+   ```bash
+   cd ../diamond-erp-back-end/nginx
+   docker-compose up -d
+   ```
+   
+   **Note**: Nginx will connect to the frontend container via the shared network.
 
 ### Access Services
 
@@ -53,11 +52,12 @@ The nginx container acts as a reverse proxy and static file server for:
 
 ## How It Works
 
-1. **Frontend Container**: 
+1. **Frontend Container** (runs separately via `diamond-erp-front-end/docker-compose.yml`): 
    - Builds the React application
    - Serves static files via `serve` (simple HTTP server, port 3000)
    - Handles React Router routing (SPA mode via `serve -s` flag)
    - **No nginx needed** - lightweight HTTP server only
+   - Connects to `erp-backend-network` for communication
 
 2. **Nginx Container**: 
    - Proxies frontend requests to the frontend container (port 3000)
@@ -66,6 +66,7 @@ The nginx container acts as a reverse proxy and static file server for:
    - Handles caching for static assets
    - Single entry point on port 80
    - **Only one nginx instance** - cleaner architecture
+   - Connects to `erp-backend-network` to reach frontend and backend
 
 **Benefits for CI/CD**:
 - Frontend can be built and deployed independently
@@ -73,6 +74,7 @@ The nginx container acts as a reverse proxy and static file server for:
 - Better separation of concerns
 - Easier to scale services independently
 - Simpler architecture (one nginx, one simple HTTP server)
+- Frontend and backend can be managed in separate repositories/pipelines
 
 ## SSL/TLS Setup (for Production)
 
@@ -197,21 +199,22 @@ docker-compose exec nginx nginx -s reload
 
 ### Nginx can't connect to backend or frontend
 
-- Ensure backend services are running: `cd .. && docker-compose ps`
+- Ensure backend services are running: `cd ../.. && cd diamond-erp-back-end && docker-compose ps`
+- Ensure frontend service is running: `cd ../diamond-erp-front-end && docker-compose ps`
 - Check network connectivity: `docker network inspect erp-backend-network`
 - Verify container names match the upstream definitions in `default.conf`:
   - `backend` for API
   - `frontend` for static files
-- Check if frontend container is running: `docker-compose ps`
+- Verify all services are on the same network: `docker network inspect erp-backend-network | grep -A 5 "Containers"`
 
 ### 502 Bad Gateway
 
-- Check if backend is healthy: `docker-compose exec backend curl http://localhost:8000/`
-- Check if frontend is serving files: `docker-compose exec frontend curl http://localhost:80/`
+- Check if backend is healthy: `docker exec diamond-erp-backend curl http://localhost:8000/`
+- Check if frontend is serving files: `docker exec diamond-erp-frontend curl http://localhost:3000/`
 - Check nginx error logs: `docker-compose logs nginx`
-- Verify network configuration and service dependencies
-- Ensure both backend and frontend services are running
-- Check frontend build logs: `docker-compose logs frontend`
+- Verify network configuration - ensure frontend is on `erp-backend-network`
+- Ensure backend, frontend, and nginx services are all running
+- Check frontend logs: `cd ../diamond-erp-front-end && docker-compose logs frontend`
 
 ### Port conflicts
 
