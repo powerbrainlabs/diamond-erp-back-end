@@ -1,13 +1,24 @@
 version: '3.8'
 
 services:
-  # Nginx reverse proxy - builds frontend and serves it, proxies backend API
-  nginx:
+  # Frontend service - builds and serves static files
+  frontend:
     build:
-      context: ../../  # Build from project root to access both frontend and nginx directories
-      dockerfile: diamond-erp-back-end/nginx/Dockerfile
+      context: ../../diamond-erp-front-end
+      dockerfile: Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost/api}
+    container_name: diamond-erp-frontend
+    restart: unless-stopped
+    networks:
+      - erp-backend-network
+    # Don't expose ports directly - nginx will proxy to this service
+
+  # Nginx reverse proxy - proxies to frontend and backend
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: diamond-erp-nginx
     restart: unless-stopped
     ports:
@@ -21,6 +32,7 @@ services:
       - erp-backend-network
     depends_on:
       - backend
+      - frontend
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
