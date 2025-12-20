@@ -70,12 +70,20 @@ async def get_dashboard_stats(
                 {"$match": {"status": "completed", "updated_at": {"$gte": yesterday, "$lt": today}}},
                 {"$count": "count"}
             ],
-            "pending_qa": [
-                {"$match": {"work_progress.qa.status": "pending"}},
+            "pending_qc": [
+                {"$match": {"job_type": "qc_job", "work_progress.qc.status": "pending"}},
                 {"$count": "count"}
             ],
-            "in_photography": [
-                {"$match": {"work_progress.photography.status": "in_progress"}},
+            "pending_certification": [
+                {"$match": {"job_type": "certification_job", "work_progress.certification.status": "pending"}},
+                {"$count": "count"}
+            ],
+            "in_progress_qc": [
+                {"$match": {"job_type": "qc_job", "work_progress.qc.status": "in_progress"}},
+                {"$count": "count"}
+            ],
+            "in_progress_certification": [
+                {"$match": {"job_type": "certification_job", "work_progress.certification.status": "in_progress"}},
                 {"$count": "count"}
             ],
             "created_in_period": [
@@ -161,8 +169,10 @@ async def get_dashboard_stats(
             "created_in_period": jobs_created_in_period,
             "completed_change": round(jobs_change, 1),
             "by_status": {d["_id"]: d["count"] for d in job_agg.get("by_status", [])},
-            "pending_qc": _get(job_agg.get("pending_qa", [])),
-            "in_photography": _get(job_agg.get("in_photography", [])),
+            "pending_qc": _get(job_agg.get("pending_qc", [])),
+            "pending_certification": _get(job_agg.get("pending_certification", [])),
+            "in_progress_qc": _get(job_agg.get("in_progress_qc", [])),
+            "in_progress_certification": _get(job_agg.get("in_progress_certification", [])),
         },
         "certificates": {
             "total": _get(cert_agg.get("total", [])),

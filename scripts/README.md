@@ -1,4 +1,41 @@
-# Database Seeding Script
+# Database Scripts
+
+## Cleanup Script (`cleanup_data.py`)
+
+This script removes all data from the database **except users**. Use this before seeding fresh data.
+
+### How to run cleanup:
+
+```bash
+cd diamond-erp-back-end
+source venv/bin/activate  # or activate your venv
+python scripts/cleanup_data.py
+```
+
+Or run as a module:
+
+```bash
+cd diamond-erp-back-end
+source venv/bin/activate
+python -m scripts.cleanup_data
+```
+
+**What it removes:**
+- All jobs
+- All certificates
+- All clients
+- All manufacturers
+- All QC reports
+- All attributes
+- All action history
+- All counters (job numbers, certificate numbers, etc.)
+
+**What it keeps:**
+- All users (so you don't lose your login credentials)
+
+---
+
+## Seeding Script (`seed_data.py`)
 
 This script populates the database with sample data for testing purposes.
 
@@ -40,9 +77,11 @@ After running the script, you can login with:
 
 ## Notes:
 
-- The script will **clear existing test data** (users with @test.com emails, all clients, manufacturers, jobs, certificates, and attributes)
+- **Recommended workflow**: Run `cleanup_data.py` first, then run `seed_data.py` to get fresh data
+- The seed script will create test users if they don't exist (admin@test.com, staff1@test.com, etc.)
 - It uses a placeholder image path for all certificate photos and logos
 - Job numbers and certificate numbers are auto-generated
 - Dates are spread over the last 30-90 days for realistic testing
 - All data includes proper relationships (jobs linked to clients, certificates linked to clients, etc.)
+- Jobs are created with the new structure: `qc_job` and `certification_job` types with appropriate work_progress stages
 
