@@ -46,3 +46,4 @@ async def next_certificate_number() -> str:
     
     return cert_no
 
+

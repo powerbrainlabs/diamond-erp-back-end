@@ -3,7 +3,8 @@ from typing import Optional, Literal
 from datetime import date, datetime
 
 ItemType = Literal["diamond", "jewelry", "gemstone", "loose_diamond"]
-Status = Literal["pending", "qc", "rfd", "photography", "certification", "completed"]
+JobType = Literal["qc_job", "certification_job"]
+Status = Literal["pending", "in_progress", "completed"]
 Priority = Literal["low", "medium", "high", "urgent"]
 
 
@@ -13,6 +14,7 @@ StageStatus = Literal["pending", "in_progress", "done"]
 class JobCreate(BaseModel):
     client_id: str
     manufacturer_id: Optional[str] = None  # Optional manufacturer
+    job_type: Literal["qc_job", "certification_job"]  # Job type: QC or Certification
     item_type: Literal["diamond", "jewelry", "gemstone", "loose_diamond"]
     item_description: str
     item_quantity: Optional[int] = None  # For non-loose diamond items
@@ -38,6 +40,7 @@ class JobUpdate(BaseModel):
     client_name: Optional[str] = Field(default=None, min_length=2)
     client_contact: Optional[str] = Field(default=None, min_length=10, max_length=15)
     manufacturer_id: Optional[str] = None
+    job_type: Optional[JobType] = None
     item_type: Optional[ItemType] = None
     item_description: Optional[str] = None
     item_quantity: Optional[int] = None

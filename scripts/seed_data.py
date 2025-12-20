@@ -37,7 +37,8 @@ COMPANY_NAMES = [
 
 CITIES = ["Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai", "Kolkata", "Pune", "Ahmedabad"]
 
-STATUSES = ["pending", "qc", "rfd", "photography", "certification", "completed"]
+JOB_TYPES = ["qc_job", "certification_job"]
+STATUSES = ["pending", "in_progress", "completed"]
 PRIORITIES = ["low", "medium", "high", "urgent"]
 ITEM_TYPES = ["diamond", "jewelry", "gemstone", "loose_diamond"]
 
@@ -173,6 +174,7 @@ async def seed_jobs(db, client_ids, manufacturer_ids, user_ids):
     
     jobs = []
     for i in range(50):
+        job_type = random.choice(JOB_TYPES)
         status = random.choice(STATUSES)
         item_type = random.choice(ITEM_TYPES)
         priority = random.choice(PRIORITIES)
@@ -182,38 +184,41 @@ async def seed_jobs(db, client_ids, manufacturer_ids, user_ids):
         received_date = created_date - timedelta(days=random.randint(0, 5))
         expected_delivery = created_date + timedelta(days=random.randint(7, 30))
         
-        # Work progress based on status (matching actual job structure)
-        work_progress = {
-            "qa": {
-                "status": "done" if status in ["rfd", "photography", "certification", "completed"] else "in_progress" if status == "qc" else "pending",
-                "started_at": received_date if status in ["qc", "rfd", "photography", "certification", "completed"] else None,
-                "done_at": received_date + timedelta(days=1) if status in ["rfd", "photography", "certification", "completed"] else None,
-                "done_by": None
-            },
-            "rfd": {
-                "status": "done" if status in ["photography", "certification", "completed"] else "in_progress" if status == "rfd" else "pending",
-                "started_at": received_date + timedelta(days=1) if status in ["rfd", "photography", "certification", "completed"] else None,
-                "done_at": received_date + timedelta(days=2) if status in ["photography", "certification", "completed"] else None,
-                "done_by": None
-            },
-            "photography": {
-                "status": "done" if status in ["certification", "completed"] else "in_progress" if status == "photography" else "pending",
-                "started_at": received_date + timedelta(days=2) if status in ["photography", "certification", "completed"] else None,
-                "done_at": received_date + timedelta(days=3) if status in ["certification", "completed"] else None,
-                "done_by": None
-            },
-        }
+        # Work progress based on job_type and status
+        # QC jobs have "qc" stage, Certification jobs have "certification" stage
+        if job_type == "qc_job":
+            stage_status = "done" if status == "completed" else "in_progress" if status == "in_progress" else "pending"
+            work_progress = {
+                "qc": {
+                    "status": stage_status,
+                    "started_at": received_date if status in ["in_progress", "completed"] else None,
+                    "done_at": received_date + timedelta(days=1) if status == "completed" else None,
+                    "done_by": None
+                }
+            }
+        else:  # certification_job
+            stage_status = "done" if status == "completed" else "in_progress" if status == "in_progress" else "pending"
+            work_progress = {
+                "certification": {
+                    "status": stage_status,
+                    "started_at": received_date if status in ["in_progress", "completed"] else None,
+                    "done_at": received_date + timedelta(days=1) if status == "completed" else None,
+                    "done_by": None
+                }
+            }
         
         job_data = {
             "uuid": str(uuid.uuid4()),
             "job_number": await next_job_number(),
             "client_id": random.choice(client_ids),
             "manufacturer_id": random.choice(manufacturer_ids) if random.random() > 0.4 else None,
+            "job_type": job_type,
             "item_type": item_type,
             "item_description": f"Sample {item_type.replace('_', ' ').title()} item {i+1}",
             "status": status,
             "priority": priority,
             "work_progress": work_progress,
+            "received_date": received_date,  # Keep for backward compatibility
             "received_datetime": received_date,
             "expected_delivery_date": expected_delivery,
             "notes": f"Sample job notes {i+1}" if random.random() > 0.5 else None,

@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: diamond-erp-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: diamond_erp
+    networks:
+      - erp-backend-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: diamond-erp-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    networks:
+      - erp-backend-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: diamond-erp-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      # MongoDB
+      MONGODB_URL: mongodb://mongodb:27017
+      DATABASE_NAME: diamond_erp
+      
+      # MinIO
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_USE_TLS: "false"
+      
+      # JWT
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-this-in-production-min-16-chars}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      REFRESH_TOKEN_EXPIRE_DAYS: 7
+      
+      # CORS
+      ALLOWED_ORIGINS: http://localhost:80,http://localhost:5173,http://localhost:3000
+      
+      # Admin
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@diamonderp.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrator}
+      
+      # Frontend URL
+      FRONTEND_URL: http://localhost:80
+      
+      # Remove.bg API
+      REMOVE_BG_API_KEY: ${REMOVE_BG_API_KEY:-MXua93vfYeGxtuWoJv8xJEmE}
+      REMOVE_BG_API_URL: https://api.remove.bg/v1.0/removebg
+      
+      # App settings
+      APP_NAME: Diamond ERP API
+      DEBUG: "true"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - erp-backend-network
+
+volumes:
+  mongodb_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  erp-backend-network:
+    name: erp-backend-network
+    driver: bridge
+

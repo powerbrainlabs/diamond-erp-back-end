@@ -14,8 +14,10 @@ from .api.categories import router as category_router
 from .api.qc_reports import router as qc_reports_router
 from .api.staff import router as staff_router
 from .api.action_history import router as action_history_router
+from .api.dashboard import router as dashboard_router
 
 from .core.security import hash_password
+from .core.minio_client import ensure_buckets
 
 app = FastAPI(title=settings.APP_NAME)
 
@@ -29,7 +31,12 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
+    # Initialize MinIO buckets
+    await ensure_buckets()
+    
+    # Initialize database
     db = await init_db()
+    
     # Seed admin
     admin = await db.users.find_one({"email": settings.ADMIN_EMAIL})
     if not admin:
@@ -55,6 +62,7 @@ app.include_router(category_router)
 app.include_router(qc_reports_router)
 app.include_router(staff_router)
 app.include_router(action_history_router)
+app.include_router(dashboard_router)
 
 @app.get("/")
 async def root():

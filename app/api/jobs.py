@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, Literal
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
 import uuid
 
@@ -46,11 +46,23 @@ async def create_job(
     # Use received_datetime if provided, otherwise use received_date, otherwise use now
     received_dt = payload.received_datetime or payload.received_date or now
 
+    # Create work_progress based on job_type
+    # QC jobs only have "qc" stage, Certification jobs only have "certification" stage
+    if payload.job_type == "qc_job":
+        work_progress = {
+            "qc": {"status": "pending", "started_at": None, "done_at": None, "done_by": None}
+        }
+    else:  # certification_job
+        work_progress = {
+            "certification": {"status": "pending", "started_at": None, "done_at": None, "done_by": None}
+        }
+
     doc = {
         "uuid": str(uuid.uuid4()),
         "job_number": job_no,
         "client_id": payload.client_id,
         "manufacturer_id": payload.manufacturer_id,
+        "job_type": payload.job_type,
         "item_type": payload.item_type,
         "item_description": payload.item_description,
         "item_quantity": payload.item_quantity,
@@ -58,11 +70,7 @@ async def create_job(
         "item_size": payload.item_size,
         "priority": payload.priority,
         "status": "pending",
-        "work_progress": {
-            "qa": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
-            "rfd": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
-            "photography": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
-        },
+        "work_progress": work_progress,
         "received_date": received_dt,  # Keep for backward compatibility
         "received_datetime": payload.received_datetime or received_dt,
         "received_from_name": payload.received_from_name,
@@ -151,13 +159,24 @@ async def update_job(
 
     updates = {}
     for field in [
-        "manufacturer_id", "item_type", "item_description", "item_quantity", 
+        "manufacturer_id", "job_type", "item_type", "item_description", "item_quantity", 
         "item_weight", "item_size", "priority", 
         "expected_delivery_date", "received_datetime", "notes", "received_from_name"
     ]:
         val = getattr(payload, field)
         if val is not None:
             updates[field] = val
+    
+    # If job_type is being updated, update work_progress accordingly
+    if payload.job_type is not None:
+        if payload.job_type == "qc_job":
+            updates["work_progress"] = {
+                "qc": {"status": "pending", "started_at": None, "done_at": None, "done_by": None}
+            }
+        else:  # certification_job
+            updates["work_progress"] = {
+                "certification": {"status": "pending", "started_at": None, "done_at": None, "done_by": None}
+            }
 
     # Handle received_date for backward compatibility
     if payload.received_date is not None:
@@ -174,11 +193,11 @@ async def update_job(
     
     return result
 
-# ✅ Update Stage Progress (QA, RFD, Photography)
+# ✅ Update Stage Progress (QC for qc_job, Certification for certification_job)
 @router.patch("/{uuid}/progress/{stage}")
 async def update_stage_progress(
     uuid: str,
-    stage: Literal["qa", "rfd", "photography"],
+    stage: Literal["qc", "certification"],
     status: Literal["pending", "in_progress", "done"],
     current_user: dict = Depends(require_staff)
 ):
@@ -186,6 +205,13 @@ async def update_stage_progress(
     doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
+    
+    # Validate that the stage matches the job type
+    job_type = doc.get("job_type")
+    if job_type == "qc_job" and stage != "qc":
+        raise HTTPException(status_code=400, detail=f"Stage '{stage}' is not valid for QC jobs. Only 'qc' stage is allowed.")
+    if job_type == "certification_job" and stage != "certification":
+        raise HTTPException(status_code=400, detail=f"Stage '{stage}' is not valid for Certification jobs. Only 'certification' stage is allowed.")
 
     now = datetime.utcnow()
     updates = {}
@@ -211,21 +237,22 @@ async def update_stage_progress(
     updates["updated_at"] = now
     await db.jobs.update_one({"_id": doc["_id"]}, {"$set": updates})
 
-    # Auto-update main status
+    # Auto-update main status based on stage status
     job = await db.jobs.find_one({"_id": doc["_id"]})
-    all_stages = job["work_progress"]
+    stage_data = job["work_progress"].get(stage, {})
+    stage_status = stage_data.get("status", "pending")
 
-    if all(s["status"] == "pending" for s in all_stages.values()):
+    if stage_status == "pending":
         main_status = "pending"
-    elif all(s["status"] == "done" for s in all_stages.values()):
+    elif stage_status == "done":
         main_status = "completed"
-        job["actual_delivery_date"] = now
-    else:
+        updates["actual_delivery_date"] = now
+    else:  # in_progress
         main_status = "in_progress"
 
     await db.jobs.update_one(
         {"_id": doc["_id"]},
-        {"$set": {"status": main_status, "actual_delivery_date": job.get("actual_delivery_date")}},
+        {"$set": {"status": main_status, "actual_delivery_date": updates.get("actual_delivery_date")}},
     )
 
     fresh = await db.jobs.find_one({"_id": doc["_id"]})
@@ -305,6 +332,40 @@ async def job_stats_daily(current_user: dict = Depends(require_staff)):
         {"$match": {"is_deleted": False}},
         {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$count": {}}}},
         {"$sort": {"_id": 1}},
+        {"$limit": 30}  # Last 30 days
     ]
     res = await db.jobs.aggregate(pipeline).to_list(None)
     return {"daily": res}
+
+
+# ✅ Get Upcoming Deliveries
+@router.get("/upcoming-deliveries")
+async def get_upcoming_deliveries(
+    current_user: dict = Depends(require_staff),
+    days: int = Query(7, ge=1, le=30)
+):
+    """
+    Get jobs with delivery dates in the next N days or overdue
+    """
+    db = await get_db()
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    future_date = today + timedelta(days=days)
+    
+    # Get overdue jobs (past delivery date, not completed)
+    overdue = await db.jobs.find({
+        "is_deleted": False,
+        "status": {"$ne": "completed"},
+        "expected_delivery_date": {"$lt": today}
+    }).sort("expected_delivery_date", 1).limit(20).to_list(None)
+    
+    # Get upcoming deliveries
+    upcoming = await db.jobs.find({
+        "is_deleted": False,
+        "status": {"$ne": "completed"},
+        "expected_delivery_date": {"$gte": today, "$lte": future_date}
+    }).sort("expected_delivery_date", 1).limit(20).to_list(None)
+    
+    return {
+        "overdue": [dump_job(doc) for doc in overdue],
+        "upcoming": [dump_job(doc) for doc in upcoming],
+    }
