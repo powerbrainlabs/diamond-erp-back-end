@@ -22,6 +22,7 @@ jobs:
           key: ${{ secrets.GAC_DEPLOY_SSH_KEY }}
           port: ${{ secrets.GAC_DEPLOY_PORT || 22 }}
           script: |
+            export PATH="$HOME/.local/bin:$PATH"
             cd /home/powerbrainlabs/projects/diamond-erp/diamond-erp-back-end
             
             # Pull latest code
