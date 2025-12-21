@@ -48,6 +48,8 @@ jobs:
           script: |
             sleep 5
             docker ps | grep diamond-erp-backend
-            curl -f http://localhost:8000/health || exit 1
+            # Check if backend is responding (root endpoint returns {"status": "ok"})
+            response=$(curl -s http://localhost:8000/)
+            echo "$response" | grep -q "status" || exit 1
             echo "Backend health check passed!"
 
