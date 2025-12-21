@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   # Backend API
-  # Note: MongoDB and MinIO are running separately on the host
+  # Note: MongoDB and MinIO are running in Docker containers on the same network
   backend:
     build:
       context: .
@@ -27,9 +27,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      # MongoDB - connecting to host service
-      # If using host network mode, use: mongodb://localhost:27017
-      MONGODB_URL: ${MONGODB_URL:-mongodb://host.docker.internal:27017}
+      # MongoDB - connecting to MongoDB container on same Docker network
+      # Use container name for Docker-to-Docker communication
+      MONGODB_URL: ${MONGODB_URL:-mongodb://diamond-erp-mongodb:27017}
       DATABASE_NAME: diamond_erp
       
       # MinIO - connecting to host service
