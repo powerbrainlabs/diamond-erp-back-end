@@ -1,48 +1,8 @@
 version: '3.8'
 
 services:
-  # MongoDB Database
-  mongodb:
-    image: mongo:7.0
-    container_name: diamond-erp-mongodb
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    environment:
-      MONGO_INITDB_DATABASE: diamond_erp
-    networks:
-      - erp-backend-network
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # MinIO Object Storage
-  minio:
-    image: minio/minio:latest
-    container_name: diamond-erp-minio
-    restart: unless-stopped
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/data
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command: server /data --console-address ":9001"
-    networks:
-      - erp-backend-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-
   # Backend API
+  # Note: MongoDB and MinIO are running separately on the host
   backend:
     build:
       context: .
@@ -53,16 +13,33 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+    # Memory limits for low RAM server (1GB total)
+    # Backend gets 300MB with 50MB swap (will use system swap if needed)
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+        reservations:
+          memory: 200M
+    # Alternative: Use host network mode to access host services directly
+    # Uncomment the line below and comment out networks if host.docker.internal doesn't work
+    # network_mode: "host"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      # MongoDB
-      MONGODB_URL: mongodb://mongodb:27017
+      # MongoDB - connecting to host service
+      # If using host network mode, use: mongodb://localhost:27017
+      MONGODB_URL: ${MONGODB_URL:-mongodb://host.docker.internal:27017}
       DATABASE_NAME: diamond_erp
       
-      # MinIO
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      # MinIO - connecting to host service
+      # If using host network mode, use: localhost:9000
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-host.docker.internal:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_USE_TLS: "false"
+      # Public host for presigned URLs (accessible from browser via nginx proxy - HTTPS)
+      MINIO_PUBLIC_HOST: ${MINIO_PUBLIC_HOST:-staging.gac.powerbrainlabs.com}
       
       # JWT
       SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-this-in-production-min-16-chars}
@@ -70,16 +47,16 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
       REFRESH_TOKEN_EXPIRE_DAYS: 7
       
-      # CORS
-      ALLOWED_ORIGINS: http://localhost:80,http://localhost:5173,http://localhost:3000
+      # CORS - Include staging domain and IP for access (HTTPS and HTTP)
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://staging.gac.powerbrainlabs.com,http://staging.gac.powerbrainlabs.com,https://backend-sta.gac.powerbrainlabs.com,http://backend-sta.gac.powerbrainlabs.com,http://136.114.184.66,http://136.114.184.66:80,http://localhost:80,http://localhost:5173,http://localhost:3000}
       
       # Admin
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@diamonderp.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123}
       ADMIN_NAME: ${ADMIN_NAME:-Administrator}
       
-      # Frontend URL
-      FRONTEND_URL: http://localhost:80
+      # Frontend URL (HTTPS)
+      FRONTEND_URL: ${FRONTEND_URL:-https://staging.gac.powerbrainlabs.com}
       
       # Remove.bg API
       REMOVE_BG_API_KEY: ${REMOVE_BG_API_KEY:-MXua93vfYeGxtuWoJv8xJEmE}
@@ -88,19 +65,8 @@ services:
       # App settings
       APP_NAME: Diamond ERP API
       DEBUG: "true"
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
     networks:
       - erp-backend-network
-
-volumes:
-  mongodb_data:
-    driver: local
-  minio_data:
-    driver: local
 
 networks:
   erp-backend-network:

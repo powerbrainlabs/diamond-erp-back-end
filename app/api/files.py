@@ -61,6 +61,45 @@ async def get_presigned_file(bucket: str, file_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# /api/files/proxy/<bucket>/<file_id> - Proxy MinIO files through backend
+# This avoids signature validation issues with nginx proxy
+@router.get("/proxy/{bucket}/{file_id}")
+async def proxy_minio_file(bucket: str, file_id: str):
+    """
+    Proxy MinIO file through backend to avoid signature validation issues.
+    Use this if presigned URLs don't work through nginx proxy.
+    """
+    try:
+        from minio.error import S3Error
+        import io
+        
+        # Get object from MinIO
+        response = minio_client.get_object(bucket, file_id)
+        data = response.read()
+        response.close()
+        response.release_conn()
+        
+        # Get content type
+        try:
+            stat = minio_client.stat_object(bucket, file_id)
+            content_type = stat.content_type or "application/octet-stream"
+        except:
+            content_type = "application/octet-stream"
+        
+        return Response(
+            content=data,
+            media_type=content_type,
+            headers={
+                "Cache-Control": "public, max-age=3600",
+                "Content-Disposition": f'inline; filename="{file_id}"'
+            }
+        )
+    except S3Error as e:
+        raise HTTPException(status_code=404, detail=f"File not found: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/remove-background")
 async def remove_background(image: UploadFile = File(...)):
     """
