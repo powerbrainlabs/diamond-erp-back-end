@@ -149,3 +149,8 @@ async def get_action_history_stats(
         "actions_by_resource": {item["_id"]: item["count"] for item in actions_by_resource},
     }
 
+
+@router.get("/test")
+async def get_action_history_stats():
+    """Get action history statistics (admin only)"""
+    return {"message": "Hello World"}
