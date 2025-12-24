@@ -150,7 +150,7 @@ async def get_action_history_stats(
     }
 
 
-@router.get("/test")
+@router.get("/test12")
 async def get_action_history_stats():
     """Get action history statistics (admin only)"""
     return {"message": "Hello World"}
