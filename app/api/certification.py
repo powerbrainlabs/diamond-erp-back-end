@@ -109,6 +109,7 @@ async def create_certification(
         "qr_code_url": qr_code_url_path,  # Store QR code path in MinIO
         "photo_edit_completed": payload.photo_edit_completed or False,
         "is_deleted": False,
+        "is_rejected": False,
         "created_at": now,
         "updated_at": now,
     }
@@ -166,6 +167,7 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
                 "brand_logo_url": logo_url,
                 "qr_code_url": qr_code_url_path,
                 "is_deleted": False,
+                "is_rejected": False,
                 "created_at": now,
                 "updated_at": now
             })
@@ -355,3 +357,39 @@ async def certificate_stats_daily(current_user: dict = Depends(require_staff)):
     ]
     res = await db.certifications.aggregate(pipeline).to_list(None)
     return {"daily": res}
+
+
+@router.patch("/{uuid}/reject")
+async def reject_certificate(uuid: str, current_user: dict = Depends(require_staff)):
+    """
+    Mark a certificate as rejected.
+    When rejected, the certificate will show a rejection message instead of details.
+    """
+    db = await get_db()
+
+    # Find the certificate
+    cert = await db.certifications.find_one({"uuid": uuid, "is_deleted": False})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    # Check if already rejected
+    if cert.get("is_rejected"):
+        raise HTTPException(status_code=400, detail="Certificate is already rejected")
+
+    # Update the certificate to mark as rejected
+    result = await db.certifications.update_one(
+        {"uuid": uuid},
+        {
+            "$set": {
+                "is_rejected": True,
+                "rejected_at": datetime.utcnow(),
+                "rejected_by": current_user.get("uuid"),
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+
+    if result.modified_count == 0:
+        raise HTTPException(status_code=500, detail="Failed to reject certificate")
+
+    return {"detail": "Certificate rejected successfully", "uuid": uuid}
