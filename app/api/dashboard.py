@@ -53,7 +53,7 @@ async def get_dashboard_stats(
     
     # Jobs Stats
     job_pipeline = [
-        {"$match": {"is_deleted": False, "created_at": {"$gte": start_date, "$lte": end_date}}},
+        {"$match": {"is_deleted": False}},
         {"$facet": {
             "total": [{"$count": "count"}],
             "by_status": [{"$group": {"_id": "$status", "count": {"$sum": 1}}}],
