@@ -226,6 +226,7 @@ def attach_presigned_urls(doc):
 async def list_certifications(
     search: Optional[str] = None,
     type: Optional[str] = None,
+    rejected_filter: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
     sort_by: str = "created_at",
@@ -241,6 +242,12 @@ async def list_certifications(
     # Filter by certificate type
     if type:
         filt["type"] = type
+
+    # Filter by rejected status
+    if rejected_filter == "exclude":
+        filt["is_rejected"] = {"$ne": True}
+    elif rejected_filter == "only":
+        filt["is_rejected"] = True
 
     # Search on type & fields
     if search:
