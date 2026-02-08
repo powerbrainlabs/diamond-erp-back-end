@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
 
+    # Super Admin seed
+    SUPER_ADMIN_EMAIL: str = "superadmin@diamonderp.com"
+    SUPER_ADMIN_PASSWORD: str = "SuperAdmin@123"
+    SUPER_ADMIN_NAME: str = "Super Administrator"
+
     # Admin seed
     ADMIN_EMAIL: str = "admin@diamonderp.com"
     ADMIN_PASSWORD: str = "Admin@123"

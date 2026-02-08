@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from ..core.minio_client import minio_client
 from minio.commonconfig import CopySource
 from ..db.database import get_db
+from ..core.dependencies import require_staff
 from ..utils.minio_helpers import get_presigned_url
 from ..utils.serializers import serialize_mongo_doc
 
@@ -25,10 +26,11 @@ def promote_file_from_temp(file_id: str) -> str:
         raise HTTPException(status_code=500, detail=f"File move failed: {str(e)}")
 
 
-# 🧱 Single Create (still valid for diamond)
+# 🧱 Single Create
 class CertificationCreate(BaseModel):
     type: str
     client_id: str
+    category_id: Optional[str] = None  # uuid of category_schema (optional for backward compat)
     fields: Dict[str, Any]
     photo_file_id: Optional[str] = None
     logo_file_id: Optional[str] = None
@@ -45,6 +47,20 @@ async def create_certification(
     client = await db.clients.find_one({"uuid": payload.client_id, "is_deleted": False})
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
+
+    # Validate fields against category schema if provided
+    if payload.category_id:
+        schema = await db.category_schemas.find_one({
+            "uuid": payload.category_id, "is_deleted": False, "is_active": True,
+        })
+        if not schema:
+            raise HTTPException(status_code=400, detail="Invalid category schema")
+        for field_def in schema.get("fields", []):
+            if field_def.get("is_required") and not payload.fields.get(field_def["field_name"]):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Required field '{field_def['label']}' is missing",
+                )
 
     photo_url = (
         promote_file_from_temp(payload.photo_file_id)
@@ -67,6 +83,7 @@ async def create_certification(
         "uuid": str(uuid.uuid4()),
         "type": payload.type,
         "client_id": payload.client_id,
+        "category_id": payload.category_id,
         "fields": payload.fields,
         "photo_url": photo_url,
         "brand_logo_url": logo_url,
@@ -230,3 +247,64 @@ async def list_certifications(
         "has_prev": page > 1,
         "data": items,
     }
+
+# ✅ Form Schema: returns category schema fields for dynamic form rendering
+@router.get("/form-schema/{category_uuid}")
+async def get_form_schema(category_uuid: str):
+    db = await get_db()
+    schema = await db.category_schemas.find_one({
+        "uuid": category_uuid,
+        "is_deleted": False,
+        "is_active": True,
+    })
+    if not schema:
+        raise HTTPException(status_code=404, detail="Category schema not found")
+    return serialize_mongo_doc(schema)
+
+
+# ✅ Active category schemas list (for certificate form dropdown)
+@router.get("/available-schemas")
+async def list_available_schemas(group: Optional[str] = None):
+    db = await get_db()
+    filt = {"is_deleted": False, "is_active": True}
+    if group:
+        filt["group"] = group
+    cursor = db.category_schemas.find(filt).sort([("name", 1)])
+    items = []
+    async for doc in cursor:
+        items.append(serialize_mongo_doc({
+            "uuid": doc["uuid"],
+            "name": doc["name"],
+            "group": doc["group"],
+            "field_count": len(doc.get("fields", [])),
+        }))
+    return {"data": items}
+
+
+# ✅ Stats: Overview
+@router.get("/stats")
+async def certification_stats(current_user: dict = Depends(require_staff)):
+    db = await get_db()
+    pipeline = [
+        {"$match": {"is_deleted": False}},
+        {"$group": {"_id": "$type", "count": {"$count": {}}}}
+    ]
+    res = await db.certifications.aggregate(pipeline).to_list(None)
+    stats = {d["_id"]: d["count"] for d in res}
+    total = sum(stats.values())
+    return {
+        "total": total,
+        "by_type": stats
+    }
+
+# ✅ Stats: Daily
+@router.get("/stats/daily")
+async def certification_stats_daily(current_user: dict = Depends(require_staff)):
+    db = await get_db()
+    pipeline = [
+        {"$match": {"is_deleted": False}},
+        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$count": {}}}},
+        {"$sort": {"_id": 1}},
+    ]
+    res = await db.certifications.aggregate(pipeline).to_list(None)
+    return {"daily": res}

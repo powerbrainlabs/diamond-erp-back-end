@@ -1,7 +1,28 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Literal, Optional
+from typing import Dict, List, Literal, Optional
 
-Role = Literal["admin", "staff"]
+Role = Literal["super_admin", "admin", "user"]
+
+ROLE_HIERARCHY: Dict[str, int] = {
+    "super_admin": 3,
+    "admin": 2,
+    "user": 1,
+}
+
+ROLE_PERMISSIONS: Dict[str, List[str]] = {
+    "super_admin": [
+        "manage_categories", "manage_schemas", "manage_users",
+        "manage_jobs", "manage_certs", "manage_clients",
+        "view_action_history", "system_settings", "view_all",
+    ],
+    "admin": [
+        "manage_users", "manage_jobs", "manage_certs",
+        "manage_clients", "view_action_history", "view_all",
+    ],
+    "user": [
+        "manage_certs", "manage_jobs", "view_own",
+    ],
+}
 
 class RegisterRequest(BaseModel):
     email: EmailStr

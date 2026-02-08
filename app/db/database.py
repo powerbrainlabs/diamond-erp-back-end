@@ -32,7 +32,9 @@ async def init_db():
     # Tokens blacklist
     await db.tokens_blacklist.create_index([("jti", ASCENDING)], unique=True)
 
-    # Counters for sequences — no need to index _id
-    # await db.counters.create_index([("_id", ASCENDING)], unique=True)  <-- REMOVE THIS LINE
+    # Category schemas indexes
+    await db.category_schemas.create_index([("uuid", ASCENDING)], unique=True)
+    await db.category_schemas.create_index([("group", ASCENDING)])
+    await db.category_schemas.create_index([("is_deleted", ASCENDING), ("is_active", ASCENDING)])
 
     return db

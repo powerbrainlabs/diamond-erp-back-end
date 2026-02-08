@@ -6,7 +6,7 @@ import uuid
 from ..core.dependencies import require_admin, require_staff
 from ..db.database import get_db
 
-router = APIRouter(prefix="/api/categories", tags=["Categories"])
+router = APIRouter(prefix="/api/categories", tags=["Categories (Deprecated)"])
 
 # Allowed groups and types
 DIAMOND_TYPES = {"category", "color", "clarity", "cut", "conclusion", "metal_type"}
@@ -14,7 +14,7 @@ GEMSTONE_TYPES = {"gemstone", "gemstone_category", "gemstone_shape", "gemstone_c
 ALLOWED_GROUPS = {"diamond", "gemstone"}
 
 # ✅ Create Attribute
-@router.post("/{group}/{type}", status_code=201)
+@router.post("/{group}/{type}", status_code=201, deprecated=True)
 async def create_attribute(
     group: Literal["diamond", "gemstone"],
     type: str,
@@ -73,7 +73,7 @@ async def create_attribute(
 
 
 # ✅ List Attributes by group & type
-@router.get("/list/{group}/{type}")
+@router.get("/list/{group}/{type}", deprecated=True)
 async def list_attributes(
     group: Literal["diamond", "gemstone"],
     type: str,

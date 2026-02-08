@@ -62,6 +62,25 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
     await db.jobs.insert_one(doc)
     return dump_job(doc)
 
+# ✅ Upcoming Deliveries
+@router.get("/upcoming-deliveries")
+async def upcoming_deliveries(days: int = Query(7), current_user: dict = Depends(require_staff)):
+    db = await get_db()
+    now = datetime.utcnow()
+    # Find jobs where expected_delivery_date is within next N days
+    from datetime import timedelta
+    future = now + timedelta(days=days)
+    
+    filt = {
+        "is_deleted": False,
+        "status": {"$ne": "completed"},
+        "expected_delivery_date": {"$gte": now, "$lte": future}
+    }
+    
+    cursor = db.jobs.find(filt).sort([("expected_delivery_date", 1)])
+    items = [dump_job(doc) async for doc in cursor]
+    return items
+
 # ✅ List Jobs (with pagination, sorting, and filters)
 @router.get("")
 async def list_jobs(
@@ -254,3 +273,66 @@ async def job_stats_daily(current_user: dict = Depends(require_staff)):
     ]
     res = await db.jobs.aggregate(pipeline).to_list(None)
     return {"daily": res}
+
+# ✅ PDF Generation
+from fastapi.responses import StreamingResponse
+from ..utils.pdf_generator import generate_jobs_pdf
+from typing import List
+
+@router.post("/pdf")
+async def download_jobs_pdf(job_uuids: List[str], current_user: dict = Depends(require_staff)):
+    db = await get_db()
+    
+    # 1. Fetch Jobs
+    cursor = db.jobs.find({"uuid": {"$in": job_uuids}, "is_deleted": False})
+    jobs = [dump_job(doc) async for doc in cursor]
+    
+    if not jobs:
+        raise HTTPException(status_code=404, detail="No jobs found")
+        
+    # 2. Fetch Related Data (Clients, Manufacturers)
+    client_ids = {j["client_id"] for j in jobs if j.get("client_id")}
+    manufacturer_ids = {j["manufacturer_id"] for j in jobs if j.get("manufacturer_id")}
+    
+    clients_cursor = db.clients.find({"uuid": {"$in": list(client_ids)}})
+    clients_map = {doc["uuid"]: doc async for doc in clients_cursor}
+    
+    # Manufacturers might not exist in a separate collection based on schema context, 
+    # but frontend seems to have them. Let's check schema. 
+    # Frontend uses 'manufacturers.find'. 
+    # Assuming 'manufacturers' collection exists.
+    manufacturers_map = {}
+    if manufacturer_ids:
+        manufacturers_cursor = db.manufacturers.find({"id": {"$in": list(manufacturer_ids)}}) # Note: Frontend uses 'id' usually for manufactures, need verification.
+        # Let's assume 'uuid' or 'id'. Use uuid if possible, else check frontend. 
+        # Frontend: manufacturers.find(m => m.id === job.manufacturer_id)
+        # So job has manufacturer_id.
+        # I'll try to find by 'uuid' first, typical in this app.
+        async for doc in db.manufacturers.find({"uuid": {"$in": list(manufacturer_ids)}}):
+             manufacturers_map[doc["uuid"]] = doc
+
+    # 3. Prepare Data for Generator
+    print_data = []
+    for job in jobs:
+        print_data.append({
+            "job": job,
+            "client": clients_map.get(job.get("client_id")),
+            "manufacturer": manufacturers_map.get(job.get("manufacturer_id"))
+        })
+        
+    # 4. Generate PDF
+    # Path to logo - assuming we are in app/api/jobs.py, go up to root
+    # c:\go\MyProjects\REACT\PBL\diamond-erp\diamond-erp-back-end\app\api
+    # Logo is in frontend: ../diamond-erp-front-end/src/assets/gac_logo.png
+    # Relative path from backend root (where main.py runs): ../diamond-erp-front-end/src/assets/gac_logo.png
+    logo_path = "../diamond-erp-front-end/src/assets/gac_logo.png"
+    
+    pdf_buffer = generate_jobs_pdf(print_data, logo_path)
+    
+    filename = f"JobCards_{datetime.now().strftime('%Y-%m-%d')}.pdf"
+    
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )

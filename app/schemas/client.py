@@ -8,7 +8,7 @@ class ClientBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     contact_person: Optional[str] = None
     email: Optional[EmailStr] = None
-    phone: Optional[str] = Field(None, pattern=r"^[0-9]{10}$")
+    phone: Optional[str] = Field(None, pattern=r"^[\+]?[0-9\s\-]{7,15}$")
     address: Optional[str] = None
     gst_number: Optional[str] = None
     notes: Optional[str] = None
@@ -30,4 +30,4 @@ class ClientResponse(ClientBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True

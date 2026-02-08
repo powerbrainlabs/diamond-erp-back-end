@@ -11,11 +11,16 @@ def dump_id(doc):
     doc["id"] = str(doc.pop("_id"))
     return doc
 
+def get_permissions_for_role(role: str) -> list:
+    from ..schemas.auth import ROLE_PERMISSIONS
+    return ROLE_PERMISSIONS.get(role, [])
+
 def dump_user(doc) -> dict:
     d = dump_id(dict(doc))
     for k in ("created_at", "updated_at"):
         if k in d and isinstance(d[k], datetime):
             d[k] = d[k]
+    d["permissions"] = get_permissions_for_role(d.get("role", ""))
     return d
 
 def dump_job(doc) -> dict:
@@ -38,6 +43,11 @@ def dump_client(doc):
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],
     }
+
+
+def dump_qc_report(doc) -> dict:
+    d = dump_id(dict(doc))
+    return d
 
 
 def serialize_mongo_doc(obj: Any) -> Any:

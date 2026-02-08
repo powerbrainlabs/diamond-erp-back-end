@@ -33,12 +33,22 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         raise credentials_exception
     return dump_user(doc)
 
-async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
-    if current_user["role"] != "admin":
+async def require_super_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    if current_user["role"] != "super_admin":
+        raise HTTPException(status_code=403, detail="Super admin privileges required")
+    return current_user
+
+async def require_admin_or_above(current_user: dict = Depends(get_current_user)) -> dict:
+    if current_user["role"] not in ("super_admin", "admin"):
         raise HTTPException(status_code=403, detail="Admin privileges required")
     return current_user
 
-async def require_staff(current_user: dict = Depends(get_current_user)) -> dict:
-    if current_user["role"] not in ("admin", "staff"):
-        raise HTTPException(status_code=403, detail="Staff privileges required")
+# Aliases for backward compatibility with existing routes
+require_admin = require_admin_or_above
+
+async def require_authenticated(current_user: dict = Depends(get_current_user)) -> dict:
+    """Any logged-in user (super_admin, admin, or user) can access."""
     return current_user
+
+# Alias: existing routes use require_staff
+require_staff = require_authenticated
