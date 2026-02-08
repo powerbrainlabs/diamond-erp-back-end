@@ -15,6 +15,7 @@ from .api.qc_reports import router as qc_reports_router
 from .api.dashboard import router as dashboard_router
 from .api.action_history import router as action_history_router
 from .api.super_admin_categories import router as super_admin_categories_router
+from .api.certificate_types import router as certificate_types_router
 
 from .core.security import hash_password
 
@@ -63,6 +64,10 @@ async def startup_event():
             "updated_at": now,
         })
 
+    # Seed default certificate types if none exist
+    from .utils.seed_schemas import seed_default_certificate_types
+    await seed_default_certificate_types(db)
+
     # Seed default category schemas if none exist
     from .utils.seed_schemas import seed_default_category_schemas
     await seed_default_category_schemas(db)
@@ -81,6 +86,7 @@ app.include_router(qc_reports_router)
 app.include_router(dashboard_router)
 app.include_router(action_history_router)
 app.include_router(super_admin_categories_router)
+app.include_router(certificate_types_router)
 
 @app.get("/")
 async def root():

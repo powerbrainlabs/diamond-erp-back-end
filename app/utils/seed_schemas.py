@@ -1,6 +1,52 @@
-"""Seed default category schemas on first startup."""
+"""Seed default category schemas and certificate types on first startup."""
 import uuid
 from datetime import datetime
+
+
+async def seed_default_certificate_types(db):
+    """Create default certificate types (diamond, gemstone) if none exist."""
+    existing = await db.certificate_types.count_documents({"is_deleted": False})
+    if existing > 0:
+        return
+
+    now = datetime.utcnow()
+    system_author = {"user_id": "system", "name": "System", "email": "system"}
+
+    types = [
+        {
+            "uuid": str(uuid.uuid4()),
+            "slug": "diamond",
+            "name": "Diamond",
+            "description": "Diamond certification",
+            "icon": "diamond",
+            "display_order": 0,
+            "has_photo": True,
+            "has_logo": True,
+            "has_rear_logo": True,
+            "is_active": True,
+            "is_deleted": False,
+            "created_by": system_author,
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "uuid": str(uuid.uuid4()),
+            "slug": "gemstone",
+            "name": "Gemstone",
+            "description": "Gemstone certification",
+            "icon": "gem",
+            "display_order": 1,
+            "has_photo": True,
+            "has_logo": True,
+            "has_rear_logo": True,
+            "is_active": True,
+            "is_deleted": False,
+            "created_by": system_author,
+            "created_at": now,
+            "updated_at": now,
+        },
+    ]
+    await db.certificate_types.insert_many(types)
 
 
 async def seed_default_category_schemas(db):

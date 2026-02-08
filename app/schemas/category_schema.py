@@ -5,6 +5,7 @@ from typing import Optional, List, Literal, Any
 FieldType = Literal[
     "text", "textarea", "number", "dropdown",
     "checkbox", "radio", "date", "file",
+    "creatable_select",
 ]
 
 
@@ -39,7 +40,7 @@ class FieldDefinition(BaseModel):
 
 class CategorySchemaCreate(BaseModel):
     name: str = Field(min_length=2)
-    group: Literal["diamond", "gemstone"]
+    group: str = Field(min_length=1)
     description: Optional[str] = None
     fields: List[FieldDefinition] = []
 

@@ -55,6 +55,13 @@ async def create_category_schema(
 ):
     db = await get_db()
 
+    # Validate group against certificate_types
+    type_doc = await db.certificate_types.find_one({
+        "slug": payload.group, "is_deleted": False, "is_active": True,
+    })
+    if not type_doc:
+        raise HTTPException(status_code=400, detail=f"Invalid certificate type: {payload.group}")
+
     # Duplicate name check
     existing = await db.category_schemas.find_one({
         "name": {"$regex": f"^{payload.name}$", "$options": "i"},

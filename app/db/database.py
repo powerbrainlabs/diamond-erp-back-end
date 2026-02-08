@@ -37,4 +37,9 @@ async def init_db():
     await db.category_schemas.create_index([("group", ASCENDING)])
     await db.category_schemas.create_index([("is_deleted", ASCENDING), ("is_active", ASCENDING)])
 
+    # Certificate types indexes
+    await db.certificate_types.create_index([("uuid", ASCENDING)], unique=True)
+    await db.certificate_types.create_index([("slug", ASCENDING)], unique=True)
+    await db.certificate_types.create_index([("is_deleted", ASCENDING), ("is_active", ASCENDING)])
+
     return db
