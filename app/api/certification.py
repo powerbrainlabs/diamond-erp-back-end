@@ -249,6 +249,7 @@ async def list_certifications(
     }
 
 # ✅ Form Schema: returns category schema fields for dynamic form rendering
+# Dynamically populates dropdown options from the attributes collection
 @router.get("/form-schema/{category_uuid}")
 async def get_form_schema(category_uuid: str):
     db = await get_db()
@@ -259,6 +260,35 @@ async def get_form_schema(category_uuid: str):
     })
     if not schema:
         raise HTTPException(status_code=404, detail="Category schema not found")
+    
+    # Get the group (certificate type slug) for this schema
+    group = schema.get("group")
+    
+    # Dynamically populate options for dropdown and creatable_select fields
+    enriched_fields = []
+    for field in schema.get("fields", []):
+        enriched_field = dict(field)
+        
+        # For dropdown, radio, and creatable_select fields, load options from attributes
+        if field.get("field_type") in {"dropdown", "radio", "creatable_select"}:
+            field_type_key = field.get("field_name")
+            # Fetch attributes for this group/field type
+            cursor = db.attributes.find({
+                "group": group,
+                "type": field_type_key,
+                "is_deleted": False
+            }).sort([("name", 1)])
+            
+            # Extract option names
+            options = [doc.get("name") async for doc in cursor]
+            
+            # If we found attributes, use them; otherwise keep the schema's default options
+            if options:
+                enriched_field["options"] = options
+        
+        enriched_fields.append(enriched_field)
+    
+    schema["fields"] = enriched_fields
     return serialize_mongo_doc(schema)
 
 

@@ -16,6 +16,7 @@ from .api.dashboard import router as dashboard_router
 from .api.action_history import router as action_history_router
 from .api.super_admin_categories import router as super_admin_categories_router
 from .api.certificate_types import router as certificate_types_router
+from .api.dynamic_categories import router as dynamic_categories_router
 
 from .core.security import hash_password
 
@@ -87,6 +88,7 @@ app.include_router(dashboard_router)
 app.include_router(action_history_router)
 app.include_router(super_admin_categories_router)
 app.include_router(certificate_types_router)
+app.include_router(dynamic_categories_router)
 
 @app.get("/")
 async def root():
