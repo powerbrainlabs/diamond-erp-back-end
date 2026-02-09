@@ -5,8 +5,18 @@ from typing import Optional, List, Literal, Any
 FieldType = Literal[
     "text", "textarea", "number", "dropdown",
     "checkbox", "radio", "date", "file",
-    "creatable_select",
+    "creatable_select", "composite",
 ]
+
+
+class CompositeSubField(BaseModel):
+    """Defines a sub-field within a composite field."""
+    name: str = Field(min_length=1)  # e.g., "Length", "Breadth", "Height"
+    field_name: str = Field(min_length=1)  # e.g., "length", "breadth", "height"
+    field_type: Literal["text", "number"] = "text"
+    is_required: bool = False
+    placeholder: Optional[str] = None
+    display_order: int = 0
 
 
 class ValidationRules(BaseModel):
@@ -36,6 +46,7 @@ class FieldDefinition(BaseModel):
     display_order: int = 0
     help_text: Optional[str] = None
     conditional_logic: Optional[ConditionalLogic] = None
+    sub_fields: Optional[List[CompositeSubField]] = None  # for composite field type
 
 
 class CategorySchemaCreate(BaseModel):
