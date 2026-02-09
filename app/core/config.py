@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = "password123"
     MINIO_USE_TLS: bool = False
 
+    # Background Removal API
+    REMBG_API_URL: str = "https://rembg.webeazzy.com/api/process-image"
+    REMBG_API_KEY: str
+
 
     class Config:
         env_file = ".env"

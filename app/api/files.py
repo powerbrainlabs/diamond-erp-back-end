@@ -1,11 +1,14 @@
 import io
 from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
 from datetime import datetime
 import uuid
+import httpx
 
 from app.utils.minio_helpers import get_presigned_url
 from ..core.minio_client import minio_client
+from ..core.config import settings
 
 router = APIRouter(prefix="/api/files", tags=["Files"])
 
@@ -56,3 +59,48 @@ async def get_presigned_file(bucket: str, file_id: str):
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/remove-background")
+async def remove_background(image: UploadFile = File(...)):
+    """
+    Remove background from an image using the rembg.webeazzy.com API.
+    Returns the processed image with transparent background.
+    """
+    try:
+        # Read the uploaded file
+        file_bytes = await image.read()
+        
+        # Prepare the request to the external API
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            files = {"file": (image.filename, file_bytes, image.content_type)}
+            headers = {"X-API-Key": settings.REMBG_API_KEY}
+            
+            # Call the external background removal API
+            response = await client.post(
+                settings.REMBG_API_URL,
+                files=files,
+                headers=headers
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Background removal API returned error: {response.text}"
+                )
+            
+            # Return the processed image
+            return StreamingResponse(
+                io.BytesIO(response.content),
+                media_type="image/png",
+                headers={
+                    "Content-Disposition": f"attachment; filename=nobg_{image.filename}"
+                }
+            )
+            
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Background removal API timeout")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=500, detail=f"HTTP error occurred: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Background removal failed: {str(e)}")
