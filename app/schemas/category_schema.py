@@ -13,7 +13,7 @@ class CompositeSubField(BaseModel):
     """Defines a sub-field within a composite field."""
     name: str = Field(min_length=1)  # e.g., "Length", "Breadth", "Height"
     field_name: str = Field(min_length=1)  # e.g., "length", "breadth", "height"
-    field_type: Literal["text", "number"] = "text"
+    field_type: Literal["number"] = "number"  # Only number type allowed
     is_required: bool = False
     placeholder: Optional[str] = None
     display_order: int = 0

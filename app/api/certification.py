@@ -229,6 +229,20 @@ async def list_certifications(
         client = await db.clients.find_one({"uuid": doc["client_id"], "is_deleted": False})
         doc["client"] = {"id": client["uuid"], "name": client["name"]} if client else None
 
+        # Join with category schema (for field definitions and labels)
+        if doc.get("category_id"):
+            schema = await db.category_schemas.find_one({
+                "uuid": doc["category_id"],
+                "is_deleted": False
+            })
+            if schema:
+                doc["schema"] = {
+                    "uuid": schema["uuid"],
+                    "name": schema["name"],
+                    "group": schema["group"],
+                    "fields": schema.get("fields", [])
+                }
+
         serialized = serialize_mongo_doc(doc)
 
         # 🔥 Add presigned URLs
@@ -338,3 +352,49 @@ async def certification_stats_daily(current_user: dict = Depends(require_staff))
     ]
     res = await db.certifications.aggregate(pipeline).to_list(None)
     return {"daily": res}
+
+
+# ✅ Get Single Certificate by UUID
+@router.get("/{uuid}")
+async def get_certification(uuid: str):
+    """
+    Get a single certificate by UUID with schema and presigned URLs.
+    Public endpoint for certificate viewing.
+    """
+    db = await get_db()
+    doc = await db.certifications.find_one({
+        "uuid": uuid,
+        "is_deleted": False
+    })
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    # Join with client
+    client = await db.clients.find_one({
+        "uuid": doc["client_id"],
+        "is_deleted": False
+    })
+    doc["client"] = {
+        "id": client["uuid"],
+        "name": client["name"]
+    } if client else None
+
+    # Join with category schema (for field definitions and labels)
+    if doc.get("category_id"):
+        schema = await db.category_schemas.find_one({
+            "uuid": doc["category_id"],
+            "is_deleted": False
+        })
+        if schema:
+            doc["schema"] = {
+                "uuid": schema["uuid"],
+                "name": schema["name"],
+                "group": schema["group"],
+                "fields": schema.get("fields", [])
+            }
+
+    serialized = serialize_mongo_doc(doc)
+    serialized = attach_presigned_urls(serialized)
+
+    return serialized
