@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from datetime import date, datetime
 
-ItemType = Literal["diamond", "jewelry", "gemstone"]
+ItemType = Literal["loose_diamond", "diamond", "jewelry", "gemstone"]
 Status = Literal["pending", "qc", "rfd", "photography", "certification", "completed"]
 Priority = Literal["low", "medium", "high", "urgent"]
 
@@ -12,13 +12,20 @@ StageStatus = Literal["pending", "in_progress", "done"]
 
 class JobCreate(BaseModel):
     client_id: str
-    item_type: Literal["diamond", "jewelry", "gemstone"]
+    item_type: Literal["loose_diamond", "diamond", "jewelry", "gemstone"]
     item_description: str
     priority: Literal["low", "medium", "high", "urgent"] = "medium"
     expected_delivery_date: Optional[datetime] = None
     received_date: Optional[datetime] = None
+    received_datetime: Optional[datetime] = None  # Alternative field name
     received_from_name: Optional[str] = None
     notes: Optional[str] = None
+    # Optional fields from frontend
+    manufacturer_id: Optional[str] = None
+    job_type: Optional[str] = None
+    item_quantity: Optional[int] = None
+    item_weight: Optional[float] = None
+    item_size: Optional[str] = None
 
 class JobResponse(BaseModel):
     uuid: str

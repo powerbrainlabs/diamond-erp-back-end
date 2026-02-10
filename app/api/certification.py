@@ -398,3 +398,32 @@ async def get_certification(uuid: str):
     serialized = attach_presigned_urls(serialized)
 
     return serialized
+
+
+# ✅ Delete Certificate
+@router.delete("/{uuid}")
+async def delete_certification(uuid: str):
+    """
+    Soft delete a certification by marking it as deleted.
+    """
+    db = await get_db()
+    doc = await db.certifications.find_one({
+        "uuid": uuid,
+        "is_deleted": False
+    })
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    # Soft delete by marking as_deleted
+    await db.certifications.update_one(
+        {"uuid": uuid},
+        {
+            "$set": {
+                "is_deleted": True,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+
+    return {"detail": "Certificate deleted successfully"}

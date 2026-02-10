@@ -31,6 +31,9 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
     now = datetime.utcnow()
     job_no = await next_job_number()
 
+    # Use received_datetime if provided, otherwise use received_date, otherwise use now
+    received = payload.received_datetime or payload.received_date or now
+
     doc = {
         "uuid": str(uuid.uuid4()),
         "job_number": job_no,
@@ -44,11 +47,16 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
             "rfd": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
             "photography": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
         },
-        "received_date": payload.received_date or now,
+        "received_date": received,
         "received_from_name": payload.received_from_name,
         "expected_delivery_date": payload.expected_delivery_date,
         "actual_delivery_date": None,
         "notes": payload.notes,
+        "manufacturer_id": payload.manufacturer_id,
+        "job_type": payload.job_type,
+        "item_quantity": payload.item_quantity,
+        "item_weight": payload.item_weight,
+        "item_size": payload.item_size,
         "created_by": {
             "user_id": current_user["id"],
             "name": current_user["name"],

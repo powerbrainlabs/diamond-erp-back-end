@@ -92,6 +92,19 @@ async def list_clients(
     }
 
 
+# ✅ Client Stats (MUST be before /{uuid} to avoid route conflict)
+@router.get("/stats")
+async def client_stats(current_user: dict = Depends(require_staff)):
+    db = await get_db()
+    pipeline = [
+        {"$match": {"is_deleted": False}},
+        {"$group": {"_id": None, "total_clients": {"$count": {}}}},
+    ]
+    res = await db.clients.aggregate(pipeline).to_list(1)
+    total = res[0]["total_clients"] if res else 0
+    return {"total_clients": total}
+
+
 # ✅ Get Single Client
 @router.get("/{uuid}")
 async def get_client(uuid: str, current_user: dict = Depends(require_staff)):
@@ -134,16 +147,3 @@ async def delete_client(uuid: str, current_user: dict = Depends(require_admin)):
         {"$set": {"is_deleted": True, "updated_at": datetime.utcnow()}},
     )
     return {"detail": "Client deleted"}
-
-
-# ✅ Client Stats
-@router.get("/stats")
-async def client_stats(current_user: dict = Depends(require_staff)):
-    db = await get_db()
-    pipeline = [
-        {"$match": {"is_deleted": False}},
-        {"$group": {"_id": None, "total_clients": {"$count": {}}}},
-    ]
-    res = await db.clients.aggregate(pipeline).to_list(1)
-    total = res[0]["total_clients"] if res else 0
-    return {"total_clients": total}

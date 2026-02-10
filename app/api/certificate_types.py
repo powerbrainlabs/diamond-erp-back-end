@@ -86,9 +86,9 @@ async def create_certificate_type(
         "description": payload.description,
         "icon": payload.icon or "file-text",
         "display_order": next_order,
-        "has_photo": payload.has_photo,
-        "has_logo": payload.has_logo,
-        "has_rear_logo": payload.has_rear_logo,
+        "has_photo": payload.has_photo if payload.has_photo is not None else True,
+        "has_logo": payload.has_logo if payload.has_logo is not None else True,
+        "has_rear_logo": payload.has_rear_logo if payload.has_rear_logo is not None else True,
         "is_active": True,
         "is_deleted": False,
         "created_by": {
@@ -117,11 +117,17 @@ async def update_certificate_type(
         raise HTTPException(status_code=404, detail="Certificate type not found")
 
     updates = {}
-    for field in ["name", "description", "icon", "display_order",
-                   "has_photo", "has_logo", "has_rear_logo", "is_active"]:
+    for field in ["name", "description", "icon", "display_order", "is_active"]:
         val = getattr(payload, field)
         if val is not None:
             updates[field] = val
+
+    # For media fields, use defaults if not explicitly set to False
+    for field in ["has_photo", "has_logo", "has_rear_logo"]:
+        val = getattr(payload, field)
+        if val is not None:
+            updates[field] = val
+
     updates["updated_at"] = datetime.utcnow()
 
     await db.certificate_types.update_one({"_id": doc["_id"]}, {"$set": updates})
