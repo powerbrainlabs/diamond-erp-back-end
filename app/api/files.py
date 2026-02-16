@@ -1,10 +1,10 @@
 import io
-import httpx
 from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import StreamingResponse
 from datetime import datetime
 import uuid
+import httpx
 
 from app.utils.minio_helpers import get_presigned_url
 from ..core.minio_client import minio_client
@@ -36,6 +36,15 @@ async def upload_temp_file(files: List[UploadFile] = File(...)):
                 content_type=file.content_type
             )
 
+            # Verify the file was uploaded successfully
+            try:
+                minio_client.stat_object("cert-temp", file_id)
+            except Exception as verify_error:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"File upload verification failed for {file.filename}: {str(verify_error)}"
+                )
+
             uploaded.append({
                 "file_id": file_id,
                 "bucket": "cert-temp",
@@ -44,6 +53,10 @@ async def upload_temp_file(files: List[UploadFile] = File(...)):
                 "uploaded_at": datetime.utcnow().isoformat()
             })
 
+            print(f"✅ Successfully uploaded file: {file_id} to cert-temp bucket")
+
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Upload failed for {file.filename}: {str(e)}")
 
@@ -61,78 +74,71 @@ async def get_presigned_file(bucket: str, file_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# /api/files/proxy/<bucket>/<file_id> - Proxy MinIO files through backend
-# This avoids signature validation issues with nginx proxy
-@router.get("/proxy/{bucket}/{file_id}")
-async def proxy_minio_file(bucket: str, file_id: str):
+@router.get("/verify-temp/{file_id}")
+async def verify_temp_file(file_id: str):
     """
-    Proxy MinIO file through backend to avoid signature validation issues.
-    Use this if presigned URLs don't work through nginx proxy.
+    Verify if a file exists in the cert-temp bucket.
+    Useful for debugging upload issues.
     """
     try:
-        from minio.error import S3Error
-        import io
-        
-        # Get object from MinIO
-        response = minio_client.get_object(bucket, file_id)
-        data = response.read()
-        response.close()
-        response.release_conn()
-        
-        # Get content type
-        try:
-            stat = minio_client.stat_object(bucket, file_id)
-            content_type = stat.content_type or "application/octet-stream"
-        except:
-            content_type = "application/octet-stream"
-        
-        return Response(
-            content=data,
-            media_type=content_type,
-            headers={
-                "Cache-Control": "public, max-age=3600",
-                "Content-Disposition": f'inline; filename="{file_id}"'
-            }
-        )
-    except S3Error as e:
-        raise HTTPException(status_code=404, detail=f"File not found: {str(e)}")
+        stat = minio_client.stat_object("cert-temp", file_id)
+        return {
+            "exists": True,
+            "file_id": file_id,
+            "bucket": "cert-temp",
+            "size": stat.size,
+            "last_modified": stat.last_modified.isoformat() if stat.last_modified else None,
+            "content_type": stat.content_type
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "exists": False,
+            "file_id": file_id,
+            "bucket": "cert-temp",
+            "error": str(e)
+        }
 
 
 @router.post("/remove-background")
 async def remove_background(image: UploadFile = File(...)):
     """
-    Remove background from image using remove.bg API
-    Returns the processed image as PNG
+    Remove background from an image using the rembg.webeazzy.com API.
+    Returns the processed image with transparent background.
     """
     try:
-        # Read image bytes
-        image_bytes = await image.read()
+        # Read the uploaded file
+        file_bytes = await image.read()
         
-        # Call remove.bg API
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # Prepare the request to the external API
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            files = {"file": (image.filename, file_bytes, image.content_type)}
+            headers = {"X-API-Key": settings.REMBG_API_KEY}
+            
+            # Call the external background removal API
             response = await client.post(
-                settings.REMOVE_BG_API_URL,
-                files={"image_file": (image.filename, image_bytes, image.content_type)},
-                data={"size": "auto"},
-                headers={"X-Api-Key": settings.REMOVE_BG_API_KEY}
+                settings.REMBG_API_URL,
+                files=files,
+                headers=headers
             )
             
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=f"Remove.bg API error: {response.text}"
+                    detail=f"Background removal API returned error: {response.text}"
                 )
             
             # Return the processed image
-            return Response(
-                content=response.content,
+            return StreamingResponse(
+                io.BytesIO(response.content),
                 media_type="image/png",
-                headers={"Content-Disposition": "attachment; filename=no-bg.png"}
+                headers={
+                    "Content-Disposition": f"attachment; filename=nobg_{image.filename}"
+                }
             )
             
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Background removal request timed out")
+        raise HTTPException(status_code=504, detail="Background removal API timeout")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=500, detail=f"HTTP error occurred: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Background removal failed: {str(e)}")

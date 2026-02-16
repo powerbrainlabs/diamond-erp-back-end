@@ -7,17 +7,22 @@ import uuid
 from ..core.dependencies import require_admin, require_staff
 from ..db.database import get_db
 
-router = APIRouter(prefix="/api/categories", tags=["Categories"])
+router = APIRouter(prefix="/api/categories", tags=["Categories (Deprecated)"])
 
 # Allowed groups and types
 DIAMOND_TYPES = {"category", "color", "clarity", "cut", "conclusion", "metal_type"}
 GEMSTONE_TYPES = {"gemstone", "gemstone_category", "gemstone_shape", "gemstone_comments", "microscopic_observation"}
-ALLOWED_GROUPS = {"diamond", "gemstone"}
+LOOSE_DIAMOND_TYPES = {"category", "color", "clarity", "cut", "carat_weight", "shape"}
+LOOSE_GEMSTONE_TYPES = {"gemstone_type", "color", "clarity", "cut", "carat_weight", "shape", "origin"}
+SINGLE_MOUNTED_TYPES = {"category", "metal_type", "stone_type", "setting_style"}
+DOUBLE_MOUNTED_TYPES = {"category", "metal_type", "stone_type", "setting_style"}
+TRIPLE_MOUNTED_TYPES = {"category", "metal_type", "stone_type", "setting_style"}
+ALLOWED_GROUPS = {"diamond", "gemstone", "loose_diamond", "loose_gemstone", "single_mounted", "double_mounted", "triple_mounted"}
 
 # ✅ Create Attribute
-@router.post("/{group}/{type}", status_code=201)
+@router.post("/{group}/{type}", status_code=201, deprecated=True)
 async def create_attribute(
-    group: Literal["diamond", "gemstone"],
+    group: str,
     type: str,
     payload: dict,
     current_user: dict = Depends(require_staff)
@@ -27,10 +32,20 @@ async def create_attribute(
     # Validate group & type
     if group not in ALLOWED_GROUPS:
         raise HTTPException(status_code=400, detail="Invalid group")
-    if group == "diamond" and type not in DIAMOND_TYPES:
-        raise HTTPException(status_code=400, detail="Invalid diamond type")
-    if group == "gemstone" and type not in GEMSTONE_TYPES:
-        raise HTTPException(status_code=400, detail="Invalid gemstone type")
+    
+    # Get valid types for this group
+    valid_types = {
+        "diamond": DIAMOND_TYPES,
+        "gemstone": GEMSTONE_TYPES,
+        "loose_diamond": LOOSE_DIAMOND_TYPES,
+        "loose_gemstone": LOOSE_GEMSTONE_TYPES,
+        "single_mounted": SINGLE_MOUNTED_TYPES,
+        "double_mounted": DOUBLE_MOUNTED_TYPES,
+        "triple_mounted": TRIPLE_MOUNTED_TYPES,
+    }.get(group, set())
+    
+    if type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Invalid type '{type}' for group '{group}'")
 
     # Required field
     name = payload.get("name")
@@ -74,9 +89,9 @@ async def create_attribute(
 
 
 # ✅ List Attributes by group & type
-@router.get("/list/{group}/{type}")
+@router.get("/list/{group}/{type}", deprecated=True)
 async def list_attributes(
-    group: Literal["diamond", "gemstone"],
+    group: str,
     type: str,
     search: Optional[str] = None,
     current_user: dict = Depends(require_staff),
@@ -86,10 +101,20 @@ async def list_attributes(
     # Validate group/type
     if group not in ALLOWED_GROUPS:
         raise HTTPException(status_code=400, detail="Invalid group")
-    if group == "diamond" and type not in DIAMOND_TYPES:
-        raise HTTPException(status_code=400, detail="Invalid diamond type")
-    if group == "gemstone" and type not in GEMSTONE_TYPES:
-        raise HTTPException(status_code=400, detail="Invalid gemstone type")
+    
+    # Get valid types for this group
+    valid_types = {
+        "diamond": DIAMOND_TYPES,
+        "gemstone": GEMSTONE_TYPES,
+        "loose_diamond": LOOSE_DIAMOND_TYPES,
+        "loose_gemstone": LOOSE_GEMSTONE_TYPES,
+        "single_mounted": SINGLE_MOUNTED_TYPES,
+        "double_mounted": DOUBLE_MOUNTED_TYPES,
+        "triple_mounted": TRIPLE_MOUNTED_TYPES,
+    }.get(group, set())
+    
+    if type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Invalid type '{type}' for group '{group}'")
 
     filt = {"group": group, "type": type, "is_deleted": False}
     if search:

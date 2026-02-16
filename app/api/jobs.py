@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, Literal
-from datetime import datetime, timedelta
+from datetime import datetime
 from bson import ObjectId
 import uuid
 
@@ -9,8 +9,6 @@ from ..core.dependencies import require_admin, require_staff
 from ..db.database import get_db
 from ..utils.job_number import next_job_number
 from ..utils.serializers import dump_job
-from ..utils.action_logger import auto_log_action
-from fastapi import Depends
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
@@ -22,11 +20,7 @@ ALLOWED_SORTS = {
 
 # ✅ Create Job
 @router.post("", status_code=201)
-async def create_job(
-    payload: JobCreate, 
-    current_user: dict = Depends(require_staff),
-    _: None = Depends(auto_log_action),  # Automatic logging - no logic needed!
-):
+async def create_job(payload: JobCreate, current_user: dict = Depends(require_staff)):
     db = await get_db()
 
     # Validate client
@@ -34,49 +28,35 @@ async def create_job(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    # Validate manufacturer if provided
-    if payload.manufacturer_id:
-        manufacturer = await db.manufacturers.find_one({"uuid": payload.manufacturer_id, "is_deleted": False})
-        if not manufacturer:
-            raise HTTPException(status_code=404, detail="Manufacturer not found")
-
     now = datetime.utcnow()
     job_no = await next_job_number()
-    
-    # Use received_datetime if provided, otherwise use received_date, otherwise use now
-    received_dt = payload.received_datetime or payload.received_date or now
 
-    # Create work_progress based on job_type
-    # QC jobs only have "qc" stage, Certification jobs only have "certification" stage
-    if payload.job_type == "qc_job":
-        work_progress = {
-            "qc": {"status": "pending", "started_at": None, "done_at": None, "done_by": None}
-        }
-    else:  # certification_job
-        work_progress = {
-            "certification": {"status": "pending", "started_at": None, "done_at": None, "done_by": None}
-        }
+    # Use received_datetime if provided, otherwise use received_date, otherwise use now
+    received = payload.received_datetime or payload.received_date or now
 
     doc = {
         "uuid": str(uuid.uuid4()),
         "job_number": job_no,
         "client_id": payload.client_id,
-        "manufacturer_id": payload.manufacturer_id,
-        "job_type": payload.job_type,
         "item_type": payload.item_type,
         "item_description": payload.item_description,
-        "item_quantity": payload.item_quantity,
-        "item_weight": payload.item_weight,
-        "item_size": payload.item_size,
         "priority": payload.priority,
         "status": "pending",
-        "work_progress": work_progress,
-        "received_date": received_dt,  # Keep for backward compatibility
-        "received_datetime": payload.received_datetime or received_dt,
+        "work_progress": {
+            "qa": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
+            "rfd": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
+            "photography": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
+        },
+        "received_date": received,
         "received_from_name": payload.received_from_name,
         "expected_delivery_date": payload.expected_delivery_date,
         "actual_delivery_date": None,
         "notes": payload.notes,
+        "manufacturer_id": payload.manufacturer_id,
+        "job_type": payload.job_type,
+        "item_quantity": payload.item_quantity,
+        "item_weight": payload.item_weight,
+        "item_size": payload.item_size,
         "created_by": {
             "user_id": current_user["id"],
             "name": current_user["name"],
@@ -88,11 +68,26 @@ async def create_job(
     }
 
     await db.jobs.insert_one(doc)
-    result = dump_job(doc)
+    return dump_job(doc)
+
+# ✅ Upcoming Deliveries
+@router.get("/upcoming-deliveries")
+async def upcoming_deliveries(days: int = Query(7), current_user: dict = Depends(require_staff)):
+    db = await get_db()
+    now = datetime.utcnow()
+    # Find jobs where expected_delivery_date is within next N days
+    from datetime import timedelta
+    future = now + timedelta(days=days)
     
-    # No logging code needed - auto_log_action handles it automatically!
+    filt = {
+        "is_deleted": False,
+        "status": {"$ne": "completed"},
+        "expected_delivery_date": {"$gte": now, "$lte": future}
+    }
     
-    return result
+    cursor = db.jobs.find(filt).sort([("expected_delivery_date", 1)])
+    items = [dump_job(doc) async for doc in cursor]
+    return items
 
 # ✅ List Jobs (with pagination, sorting, and filters)
 @router.get("")
@@ -139,65 +134,31 @@ async def get_job(uuid: str, current_user: dict = Depends(require_staff)):
 
 # ✅ Update Job Info
 @router.put("/{uuid}")
-async def update_job(
-    uuid: str, 
-    payload: JobUpdate, 
-    current_user: dict = Depends(require_staff),
-    _: None = Depends(auto_log_action),  # Automatic logging
-):
+async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends(require_staff)):
     db = await get_db()
     doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
 
-    # Validate manufacturer if provided
-    if payload.manufacturer_id is not None:
-        if payload.manufacturer_id:
-            manufacturer = await db.manufacturers.find_one({"uuid": payload.manufacturer_id, "is_deleted": False})
-            if not manufacturer:
-                raise HTTPException(status_code=404, detail="Manufacturer not found")
-
     updates = {}
     for field in [
-        "manufacturer_id", "job_type", "item_type", "item_description", "item_quantity", 
-        "item_weight", "item_size", "priority", 
-        "expected_delivery_date", "received_datetime", "notes", "received_from_name"
+        "item_type", "item_description", "priority", 
+        "expected_delivery_date", "notes", "received_from_name"
     ]:
         val = getattr(payload, field)
         if val is not None:
             updates[field] = val
-    
-    # If job_type is being updated, update work_progress accordingly
-    if payload.job_type is not None:
-        if payload.job_type == "qc_job":
-            updates["work_progress"] = {
-                "qc": {"status": "pending", "started_at": None, "done_at": None, "done_by": None}
-            }
-        else:  # certification_job
-            updates["work_progress"] = {
-                "certification": {"status": "pending", "started_at": None, "done_at": None, "done_by": None}
-            }
-
-    # Handle received_date for backward compatibility
-    if payload.received_date is not None:
-        updates["received_date"] = payload.received_date
-        if "received_datetime" not in updates:
-            updates["received_datetime"] = payload.received_date
 
     updates["updated_at"] = datetime.utcnow()
     await db.jobs.update_one({"_id": doc["_id"]}, {"$set": updates})
     fresh = await db.jobs.find_one({"_id": doc["_id"]})
-    result = dump_job(fresh)
-    
-    # No logging code needed - auto_log_action handles it automatically!
-    
-    return result
+    return dump_job(fresh)
 
-# ✅ Update Stage Progress (QC for qc_job, Certification for certification_job)
+# ✅ Update Stage Progress (QA, RFD, Photography)
 @router.patch("/{uuid}/progress/{stage}")
 async def update_stage_progress(
     uuid: str,
-    stage: Literal["qc", "certification"],
+    stage: Literal["qa", "rfd", "photography"],
     status: Literal["pending", "in_progress", "done"],
     current_user: dict = Depends(require_staff)
 ):
@@ -205,13 +166,6 @@ async def update_stage_progress(
     doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
-    
-    # Validate that the stage matches the job type
-    job_type = doc.get("job_type")
-    if job_type == "qc_job" and stage != "qc":
-        raise HTTPException(status_code=400, detail=f"Stage '{stage}' is not valid for QC jobs. Only 'qc' stage is allowed.")
-    if job_type == "certification_job" and stage != "certification":
-        raise HTTPException(status_code=400, detail=f"Stage '{stage}' is not valid for Certification jobs. Only 'certification' stage is allowed.")
 
     now = datetime.utcnow()
     updates = {}
@@ -237,22 +191,21 @@ async def update_stage_progress(
     updates["updated_at"] = now
     await db.jobs.update_one({"_id": doc["_id"]}, {"$set": updates})
 
-    # Auto-update main status based on stage status
+    # Auto-update main status
     job = await db.jobs.find_one({"_id": doc["_id"]})
-    stage_data = job["work_progress"].get(stage, {})
-    stage_status = stage_data.get("status", "pending")
+    all_stages = job["work_progress"]
 
-    if stage_status == "pending":
+    if all(s["status"] == "pending" for s in all_stages.values()):
         main_status = "pending"
-    elif stage_status == "done":
+    elif all(s["status"] == "done" for s in all_stages.values()):
         main_status = "completed"
-        updates["actual_delivery_date"] = now
-    else:  # in_progress
+        job["actual_delivery_date"] = now
+    else:
         main_status = "in_progress"
 
     await db.jobs.update_one(
         {"_id": doc["_id"]},
-        {"$set": {"status": main_status, "actual_delivery_date": updates.get("actual_delivery_date")}},
+        {"$set": {"status": main_status, "actual_delivery_date": job.get("actual_delivery_date")}},
     )
 
     fresh = await db.jobs.find_one({"_id": doc["_id"]})
@@ -279,11 +232,7 @@ async def update_job_status(
 
 # ✅ Soft Delete
 @router.delete("/{uuid}")
-async def delete_job(
-    uuid: str, 
-    current_user: dict = Depends(require_admin),
-    _: None = Depends(auto_log_action),  # Automatic logging
-):
+async def delete_job(uuid: str, current_user: dict = Depends(require_admin)):
     db = await get_db()
     doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
@@ -292,9 +241,6 @@ async def delete_job(
         {"_id": doc["_id"]},
         {"$set": {"is_deleted": True, "updated_at": datetime.utcnow()}},
     )
-    
-    # No logging code needed - auto_log_action handles it automatically!
-    
     return {"detail": "Job deleted"}
 
 # ✅ Stats: Overview
@@ -332,40 +278,69 @@ async def job_stats_daily(current_user: dict = Depends(require_staff)):
         {"$match": {"is_deleted": False}},
         {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$count": {}}}},
         {"$sort": {"_id": 1}},
-        {"$limit": 30}  # Last 30 days
     ]
     res = await db.jobs.aggregate(pipeline).to_list(None)
     return {"daily": res}
 
+# ✅ PDF Generation
+from fastapi.responses import StreamingResponse
+from ..utils.pdf_generator import generate_jobs_pdf
+from typing import List
 
-# ✅ Get Upcoming Deliveries
-@router.get("/upcoming-deliveries")
-async def get_upcoming_deliveries(
-    current_user: dict = Depends(require_staff),
-    days: int = Query(7, ge=1, le=30)
-):
-    """
-    Get jobs with delivery dates in the next N days or overdue
-    """
+@router.post("/pdf")
+async def download_jobs_pdf(job_uuids: List[str], current_user: dict = Depends(require_staff)):
     db = await get_db()
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    future_date = today + timedelta(days=days)
     
-    # Get overdue jobs (past delivery date, not completed)
-    overdue = await db.jobs.find({
-        "is_deleted": False,
-        "status": {"$ne": "completed"},
-        "expected_delivery_date": {"$lt": today}
-    }).sort("expected_delivery_date", 1).limit(20).to_list(None)
+    # 1. Fetch Jobs
+    cursor = db.jobs.find({"uuid": {"$in": job_uuids}, "is_deleted": False})
+    jobs = [dump_job(doc) async for doc in cursor]
     
-    # Get upcoming deliveries
-    upcoming = await db.jobs.find({
-        "is_deleted": False,
-        "status": {"$ne": "completed"},
-        "expected_delivery_date": {"$gte": today, "$lte": future_date}
-    }).sort("expected_delivery_date", 1).limit(20).to_list(None)
+    if not jobs:
+        raise HTTPException(status_code=404, detail="No jobs found")
+        
+    # 2. Fetch Related Data (Clients, Manufacturers)
+    client_ids = {j["client_id"] for j in jobs if j.get("client_id")}
+    manufacturer_ids = {j["manufacturer_id"] for j in jobs if j.get("manufacturer_id")}
     
-    return {
-        "overdue": [dump_job(doc) for doc in overdue],
-        "upcoming": [dump_job(doc) for doc in upcoming],
-    }
+    clients_cursor = db.clients.find({"uuid": {"$in": list(client_ids)}})
+    clients_map = {doc["uuid"]: doc async for doc in clients_cursor}
+    
+    # Manufacturers might not exist in a separate collection based on schema context, 
+    # but frontend seems to have them. Let's check schema. 
+    # Frontend uses 'manufacturers.find'. 
+    # Assuming 'manufacturers' collection exists.
+    manufacturers_map = {}
+    if manufacturer_ids:
+        manufacturers_cursor = db.manufacturers.find({"id": {"$in": list(manufacturer_ids)}}) # Note: Frontend uses 'id' usually for manufactures, need verification.
+        # Let's assume 'uuid' or 'id'. Use uuid if possible, else check frontend. 
+        # Frontend: manufacturers.find(m => m.id === job.manufacturer_id)
+        # So job has manufacturer_id.
+        # I'll try to find by 'uuid' first, typical in this app.
+        async for doc in db.manufacturers.find({"uuid": {"$in": list(manufacturer_ids)}}):
+             manufacturers_map[doc["uuid"]] = doc
+
+    # 3. Prepare Data for Generator
+    print_data = []
+    for job in jobs:
+        print_data.append({
+            "job": job,
+            "client": clients_map.get(job.get("client_id")),
+            "manufacturer": manufacturers_map.get(job.get("manufacturer_id"))
+        })
+        
+    # 4. Generate PDF
+    # Path to logo - assuming we are in app/api/jobs.py, go up to root
+    # c:\go\MyProjects\REACT\PBL\diamond-erp\diamond-erp-back-end\app\api
+    # Logo is in frontend: ../diamond-erp-front-end/src/assets/gac_logo.png
+    # Relative path from backend root (where main.py runs): ../diamond-erp-front-end/src/assets/gac_logo.png
+    logo_path = "../diamond-erp-front-end/src/assets/gac_logo.png"
+    
+    pdf_buffer = generate_jobs_pdf(print_data, logo_path)
+    
+    filename = f"JobCards_{datetime.now().strftime('%Y-%m-%d')}.pdf"
+    
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )

@@ -1,182 +1,146 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional, List
+from datetime import datetime
 from bson import ObjectId
 import uuid
 
-from ..core.dependencies import require_staff, require_admin
+from ..schemas.qc_report import QCReportCreate, QCReportUpdate
+from ..core.dependencies import require_staff
 from ..db.database import get_db
+from ..utils.serializers import dump_qc_report
 
-router = APIRouter(prefix="/api/reports", tags=["QC Reports"])
-
-def serialize_qc_report(doc):
-    """Serialize QC report document"""
-    if not doc:
-        return None
-    
-    # Serialize created_by to handle ObjectId in user_id
-    created_by = doc.get("created_by", {})
-    if created_by and isinstance(created_by, dict):
-        created_by = created_by.copy()
-        if isinstance(created_by.get("user_id"), ObjectId):
-            created_by["user_id"] = str(created_by["user_id"])
-    
-    return {
-        "id": str(doc.get("uuid")),
-        "uuid": str(doc.get("uuid")),
-        "lot_data": doc.get("lot_data", []),
-        "clientname": doc.get("clientname"),
-        "phno": doc.get("phno"),
-        "address": doc.get("address"),
-        "country": doc.get("country"),
-        "state": doc.get("state"),
-        "city": doc.get("city"),
-        "summary_note": doc.get("summary_note"),
-        "ocr_no": doc.get("ocr_no"),
-        "created_by": created_by,
-        "created_at": doc.get("created_at").isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at"),
-        "updated_at": doc.get("updated_at").isoformat() if isinstance(doc.get("updated_at"), datetime) else doc.get("updated_at"),
-    }
+router = APIRouter(prefix="/api/reports/qc", tags=["QC Reports"])
 
 # ✅ Create QC Report
-@router.post("/qc", status_code=201)
-async def create_qc_report(
-    payload: Dict[str, Any],
-    current_user: dict = Depends(require_staff)
-):
+@router.post("", status_code=201)
+async def create_qc_report(payload: QCReportCreate, current_user: dict = Depends(require_staff)):
     db = await get_db()
     
-    # Handle both camelCase (from frontend) and snake_case
-    lot_data = payload.get("lotData") or payload.get("lot_data")
-    clientname = payload.get("clientname") or payload.get("client_name")
+    # Validate job exists
+    job = await db.jobs.find_one({"uuid": payload.job_id, "is_deleted": False})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
     
-    # Validate required fields
-    if not lot_data:
-        raise HTTPException(status_code=422, detail="lotData is required")
-    if not clientname:
-        raise HTTPException(status_code=422, detail="clientname is required")
+    # Auto-generate OCR number (QC Report Number)
+    # Format: OCR-YYYYMMDD-XXXX
+    from datetime import datetime
+    today = datetime.utcnow()
+    date_prefix = today.strftime("%Y%m%d")
+    
+    # Find the last report number for today
+    last_report = await db.qc_reports.find_one(
+        {"ocr_no": {"$regex": f"^OCR-{date_prefix}-"}},
+        sort=[("created_at", -1)]
+    )
+    
+    if last_report and last_report.get("ocr_no"):
+        # Extract the sequence number and increment
+        last_seq = int(last_report["ocr_no"].split("-")[-1])
+        new_seq = last_seq + 1
+    else:
+        new_seq = 1
+    
+    ocr_no = f"OCR-{date_prefix}-{new_seq:04d}"
     
     now = datetime.utcnow()
     
-    # Generate OCR number (you can customize this logic)
-    # For now, using a simple format: OCR-YYYYMMDD-XXXX
-    date_str = now.strftime("%Y%m%d")
-    existing_today = await db.qc_reports.count_documents({
-        "ocr_no": {"$regex": f"OCR-{date_str}"},
-        "is_deleted": False
-    })
-    ocr_no = f"OCR-{date_str}-{str(existing_today + 1).zfill(4)}"
+    # Convert lotData to dict format
+    lot_data_dict = [lot.dict(by_alias=True) for lot in payload.lotData] if payload.lotData else []
     
     doc = {
         "uuid": str(uuid.uuid4()),
-        "lot_data": lot_data,
-        "clientname": clientname,
-        "phno": payload.get("phno", ""),
-        "address": payload.get("address", ""),
-        "country": payload.get("country", ""),
-        "state": payload.get("state", ""),
-        "city": payload.get("city", ""),
-        "summary_note": payload.get("summary_note") or payload.get("summaryNote", ""),
+        "job_id": payload.job_id,
         "ocr_no": ocr_no,
+        "clientname": payload.clientname,
+        "phno": payload.phno,
+        "address": payload.address,
+        "country": payload.country,
+        "state": payload.state,
+        "city": payload.city,
+        "lotData": lot_data_dict,
+        "summary_note": payload.summary_note,
+        "tested_by": {
+            "user_id": current_user["id"],
+            "name": current_user["name"],
+            "email": current_user["email"],
+        },
+        "status": "draft",
         "is_deleted": False,
         "created_at": now,
         "updated_at": now,
-        "created_by": {
-            "user_id": current_user["id"],
-            "name": current_user["name"],
-            "email": current_user["email"]
-        }
     }
     
     await db.qc_reports.insert_one(doc)
-    return {
-        "message": "QC Report created successfully",
-        "data": serialize_qc_report(doc)
-    }
+    return dump_qc_report(doc)
 
-# ✅ List All QC Reports
-@router.get("/qc")
+# ✅ List QC Reports
+@router.get("")
 async def list_qc_reports(
     current_user: dict = Depends(require_staff),
-    search: Optional[str] = None,
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    sort_by: str = "created_at",
-    order: str = "desc"
+    job_id: Optional[str] = None,
+    status: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20,
 ):
     db = await get_db()
-    
     filt = {"is_deleted": False}
-    if search:
-        filt["$or"] = [
-            {"clientname": {"$regex": search, "$options": "i"}},
-            {"ocr_no": {"$regex": search, "$options": "i"}},
-            {"phno": {"$regex": search, "$options": "i"}},
-        ]
     
-    sort_order = -1 if order == "desc" else 1
-    sort_field = sort_by if sort_by in ["created_at", "updated_at", "ocr_no"] else "created_at"
-    
-    skip = (page - 1) * limit
-    
-    cursor = db.qc_reports.find(filt).sort([(sort_field, sort_order)]).skip(skip).limit(limit)
-    data = [serialize_qc_report(doc) async for doc in cursor]
+    if job_id:
+        filt["job_id"] = job_id
+    if status:
+        filt["status"] = status
     
     total = await db.qc_reports.count_documents(filt)
+    skip = (max(page, 1) - 1) * max(min(limit, 200), 1)
+    cursor = db.qc_reports.find(filt).sort([("created_at", -1)]).skip(skip).limit(limit)
+    items = [dump_qc_report(doc) async for doc in cursor]
     
+    total_pages = (total + limit - 1) // limit
     return {
-        "data": data,
-        "pagination": {
-            "page": page,
-            "limit": limit,
-            "total": total,
-            "totalPages": (total + limit - 1) // limit,
-            "hasNext": page * limit < total,
-            "hasPrev": page > 1
-        }
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1,
+        "data": items,
     }
 
-# ✅ Get QC Report by ID
-@router.get("/qc/{uuid}")
-async def get_qc_report(
-    uuid: str,
-    current_user: dict = Depends(require_staff)
-):
+# ✅ Get Single QC Report
+@router.get("/{uuid}")
+async def get_qc_report(uuid: str, current_user: dict = Depends(require_staff)):
     db = await get_db()
     doc = await db.qc_reports.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
         raise HTTPException(status_code=404, detail="QC Report not found")
-    return serialize_qc_report(doc)
+    return dump_qc_report(doc)
 
 # ✅ Update QC Report
-@router.put("/qc/{uuid}")
-async def update_qc_report(
-    uuid: str,
-    payload: Dict[str, Any],
-    current_user: dict = Depends(require_staff)
-):
+@router.put("/{uuid}")
+async def update_qc_report(uuid: str, payload: QCReportUpdate, current_user: dict = Depends(require_staff)):
     db = await get_db()
     doc = await db.qc_reports.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
         raise HTTPException(status_code=404, detail="QC Report not found")
     
     updates = {}
-    for field in ["lot_data", "clientname", "phno", "address", "country", "state", "city", "summary_note"]:
-        if field in payload:
-            updates[field] = payload[field]
+    for field in ["clientname", "phno", "address", "summary_note", "status"]:
+        val = getattr(payload, field, None)
+        if val is not None:
+            updates[field] = val
+    
+    # Handle lotData separately
+    if payload.lotData is not None:
+        updates["lotData"] = [lot.dict(by_alias=True) for lot in payload.lotData]
     
     updates["updated_at"] = datetime.utcnow()
     await db.qc_reports.update_one({"_id": doc["_id"]}, {"$set": updates})
-    
-    updated = await db.qc_reports.find_one({"_id": doc["_id"]})
-    return serialize_qc_report(updated)
+    fresh = await db.qc_reports.find_one({"_id": doc["_id"]})
+    return dump_qc_report(fresh)
 
-# ✅ Delete QC Report (Soft Delete)
-@router.delete("/qc/{uuid}")
-async def delete_qc_report(
-    uuid: str,
-    current_user: dict = Depends(require_admin)
-):
+# ✅ Delete QC Report
+@router.delete("/{uuid}")
+async def delete_qc_report(uuid: str, current_user: dict = Depends(require_staff)):
     db = await get_db()
     doc = await db.qc_reports.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
@@ -184,58 +148,35 @@ async def delete_qc_report(
     
     await db.qc_reports.update_one(
         {"_id": doc["_id"]},
-        {"$set": {"is_deleted": True, "updated_at": datetime.utcnow()}}
+        {"$set": {"is_deleted": True, "updated_at": datetime.utcnow()}},
     )
     return {"detail": "QC Report deleted"}
 
 
 # ✅ Stats: Overview
-@router.get("/qc/stats")
+@router.get("/stats")
 async def qc_report_stats(current_user: dict = Depends(require_staff)):
-    """
-    Get QC report statistics
-    """
     db = await get_db()
-    
     pipeline = [
         {"$match": {"is_deleted": False}},
-        {"$facet": {
-            "total": [{"$count": "count"}],
-            "created_today": [
-                {"$match": {"created_at": {"$gte": datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)}}},
-                {"$count": "count"}
-            ],
-            "created_this_week": [
-                {"$match": {"created_at": {"$gte": datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=7)}}},
-                {"$count": "count"}
-            ],
-        }}
+        {"$group": {"_id": "$status", "count": {"$count": {}}}}
     ]
-    res = await db.qc_reports.aggregate(pipeline).to_list(1)
-    agg = res[0] if res else {}
-    
-    def _get(lst): return lst[0]["count"] if lst else 0
-    
+    res = await db.qc_reports.aggregate(pipeline).to_list(None)
+    stats = {d["_id"]: d["count"] for d in res}
+    total = sum(stats.values())
     return {
-        "total_reports": _get(agg.get("total", [])),
-        "created_today": _get(agg.get("created_today", [])),
-        "created_this_week": _get(agg.get("created_this_week", [])),
+        "total": total,
+        "by_status": stats
     }
 
-
-# ✅ Stats: Daily QC Report Count
-@router.get("/qc/stats/daily")
-async def qc_report_stats_daily(current_user: dict = Depends(require_staff)):
-    """
-    Get daily QC report creation count
-    """
+# ✅ Stats
+@router.get("/stats/daily")
+async def qc_stats_daily(current_user: dict = Depends(require_staff)):
     db = await get_db()
     pipeline = [
         {"$match": {"is_deleted": False}},
-        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$sum": 1}}},
+        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$count": {}}}},
         {"$sort": {"_id": 1}},
-        {"$limit": 30}  # Last 30 days
     ]
     res = await db.qc_reports.aggregate(pipeline).to_list(None)
     return {"daily": res}
-

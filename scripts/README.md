@@ -1,87 +1,79 @@
-# Database Scripts
+# Certificate Seeding Script
 
-## Cleanup Script (`cleanup_data.py`)
+## Prerequisites
 
-This script removes all data from the database **except users**. Use this before seeding fresh data.
+1. **MongoDB must be running**
+   ```bash
+   # Option 1: Start with brew services
+   brew services start mongodb-community
 
-### How to run cleanup:
+   # Option 2: Start backend (which connects to MongoDB)
+   cd diamond-erp-back-end
+   ../venv/bin/uvicorn app.main:app --reload
+   ```
 
-```bash
-cd diamond-erp-back-end
-source venv/bin/activate  # or activate your venv
-python scripts/cleanup_data.py
-```
+2. **Certificate types and schemas must be seeded**
+   - Make sure the backend has been started at least once to seed the certificate types
 
-Or run as a module:
+## Usage
 
-```bash
-cd diamond-erp-back-end
-source venv/bin/activate
-python -m scripts.cleanup_data
-```
-
-**What it removes:**
-- All jobs
-- All certificates
-- All clients
-- All manufacturers
-- All QC reports
-- All attributes
-- All action history
-- All counters (job numbers, certificate numbers, etc.)
-
-**What it keeps:**
-- All users (so you don't lose your login credentials)
-
----
-
-## Seeding Script (`seed_data.py`)
-
-This script populates the database with sample data for testing purposes.
-
-## What it creates:
-
-- **Users**: 8 users (1 admin, 7 staff) with different creation dates
-- **Clients**: 15 sample clients with addresses, GST numbers, etc.
-- **Manufacturers**: 10 sample manufacturers
-- **Attributes**: Diamond and gemstone attributes (clarity, color, cut, types, shapes)
-- **Jobs**: 50 jobs with different statuses, priorities, and dates spread over 90 days
-- **Certificates**: 30 certificates with different dates spread over 60 days
-
-## How to run:
-
-**Make sure you're in the virtual environment and in the `diamond-erp-back-end` directory:**
+### Generate Sample Certificates
 
 ```bash
 cd diamond-erp-back-end
-source venv/bin/activate  # or activate your venv
-python scripts/seed_data.py
+../venv/bin/python scripts/seed_sample_certificates.py
 ```
 
-Or run as a module:
+This will create 3-4 sample certificates for each certificate type:
+- Single Diamond (4 certificates)
+- Loose Diamond (3 certificates)
+- Loose Stone (3 certificates)
+- Single Mounded (3 certificates)
+- Double Mounded (2 certificates)
+- Navaratna (2 certificates)
+
+### Clear and Re-seed
+
+To clear existing certificates and re-seed:
 
 ```bash
-cd diamond-erp-back-end
-source venv/bin/activate
-python -m scripts.seed_data
+../venv/bin/python scripts/seed_sample_certificates.py --clear
 ```
 
-**Note**: Make sure all dependencies are installed (`pip install -r requirements.txt`)
+## What Gets Created
 
-## Test Credentials:
+For each certificate type, the script creates realistic sample data:
+- **Clients**: Sample clients with names like "Rajesh Jewelers", "Diamond Palace", etc.
+- **Certificate Numbers**: Sequential numbers in format G{YYMMDD}{XXXX}
+- **Fields**: Realistic field values (weights, colors, clarity, etc.)
+- **No Images**: Photo/logo URLs are set to None (can be added later)
 
-After running the script, you can login with:
+## Verification
 
-- **Admin**: `admin@test.com` / `admin123`
-- **Staff**: `staff1@test.com` / `staff123` (or staff2@test.com, etc.)
+After running the script, you can verify:
 
-## Notes:
+1. **Check MongoDB**:
+   ```bash
+   mongosh
+   use diamond_erp
+   db.certifications.countDocuments()  # Should show ~17 certificates
+   db.clients.countDocuments()  # Should show sample clients
+   ```
 
-- **Recommended workflow**: Run `cleanup_data.py` first, then run `seed_data.py` to get fresh data
-- The seed script will create test users if they don't exist (admin@test.com, staff1@test.com, etc.)
-- It uses a placeholder image path for all certificate photos and logos
-- Job numbers and certificate numbers are auto-generated
-- Dates are spread over the last 30-90 days for realistic testing
-- All data includes proper relationships (jobs linked to clients, certificates linked to clients, etc.)
-- Jobs are created with the new structure: `qc_job` and `certification_job` types with appropriate work_progress stages
+2. **Check Frontend**:
+   - Navigate to Certificates page
+   - You should see all generated certificates
+   - Each type should have 2-4 samples
 
+## Troubleshooting
+
+**Error: Connection refused**
+- MongoDB is not running. Start it with `brew services start mongodb-community`
+
+**Error: No certificate types found**
+- Start the backend at least once to seed certificate types
+- Or manually seed certificate types using the schema seeding script
+
+**Error: No schema found**
+- Certificate types exist but schemas are missing
+- Check `category_schemas` collection in MongoDB

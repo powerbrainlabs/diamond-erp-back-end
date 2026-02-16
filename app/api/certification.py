@@ -7,50 +7,59 @@ from pydantic import BaseModel
 from ..core.minio_client import minio_client
 from minio.commonconfig import CopySource
 from ..db.database import get_db
+from ..core.dependencies import require_staff
 from ..utils.minio_helpers import get_presigned_url
 from ..utils.serializers import serialize_mongo_doc
-from ..utils.qr_generator import save_qr_code_to_minio
-from ..utils.certificate_number import next_certificate_number
-from ..core.config import settings
-from ..core.dependencies import require_staff
+from ..utils.cert_numbering import next_certificate_number
+from ..utils.template_renderer import render_description_template
 
 router = APIRouter(prefix="/api/certifications", tags=["Certifications"])
 
 
 def promote_file_from_temp(file_id: str) -> str:
-    """
-    Move file from cert-temp → certificates bucket and return permanent URL.
-    Returns None if file doesn't exist (graceful handling).
-    """
+    # Handle empty or None file_id
+    if not file_id or file_id.strip() == "":
+        raise HTTPException(
+            status_code=400,
+            detail="File ID is empty or invalid"
+        )
+
     src_bucket = "cert-temp"
     dest_bucket = "certificates"
     try:
-        # Check if file exists before trying to copy
+        # Check if file exists in temp bucket before trying to move it
         try:
             minio_client.stat_object(src_bucket, file_id)
-        except Exception as stat_err:
-            # File doesn't exist - return None instead of raising error
-            print(f"Warning: File {file_id} not found in {src_bucket}: {stat_err}")
-            return None
-        
+        except Exception as stat_error:
+            raise HTTPException(
+                status_code=404,
+                detail=f"File not found in temporary storage: {file_id}. "
+                       f"Please re-upload the file. Error: {str(stat_error)}"
+            )
+
+        # Copy file from temp to permanent bucket
         source = CopySource(src_bucket, file_id)
         minio_client.copy_object(dest_bucket, file_id, source)
+
+        # Remove from temp bucket after successful copy
         minio_client.remove_object(src_bucket, file_id)
+
         return f"{dest_bucket}/{file_id}"
+    except HTTPException:
+        raise
     except Exception as e:
-        # If copy fails, don't raise error - just return None
-        print(f"Warning: Failed to promote file {file_id}: {str(e)}")
-        return None
+        raise HTTPException(status_code=500, detail=f"File move failed: {str(e)}")
 
 
-# 🧱 Single Create (still valid for diamond)
+# 🧱 Single Create
 class CertificationCreate(BaseModel):
     type: str
     client_id: str
+    category_id: Optional[str] = None  # uuid of category_schema (optional for backward compat)
     fields: Dict[str, Any]
     photo_file_id: Optional[str] = None
     logo_file_id: Optional[str] = None
-    photo_edit_completed: Optional[bool] = False
+    rear_logo_file_id: Optional[str] = None
 
 
 @router.post("", status_code=201)
@@ -60,62 +69,84 @@ async def create_certification(
 ):
     db = await get_db()
 
+    print(f"📝 Creating certification with payload: type={payload.type}, client_id={payload.client_id}")
+    print(f"📸 File IDs - photo: {payload.photo_file_id}, logo: {payload.logo_file_id}, rear_logo: {payload.rear_logo_file_id}")
+
     client = await db.clients.find_one({"uuid": payload.client_id, "is_deleted": False})
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    # Promote files only if file_id is provided and file exists
-    photo_url = None
-    if payload.photo_file_id:
-        photo_url = promote_file_from_temp(payload.photo_file_id)
-        if not photo_url:
-            # File doesn't exist - this is okay, certificate can be created without photo
-            print(f"Warning: Photo file {payload.photo_file_id} not found, creating certificate without photo")
-    
-    logo_url = None
-    if payload.logo_file_id:
-        logo_url = promote_file_from_temp(payload.logo_file_id)
-        if not logo_url:
-            # File doesn't exist - this is okay, certificate can be created without logo
-            print(f"Warning: Logo file {payload.logo_file_id} not found, creating certificate without logo")
+    # Validate fields against category schema if provided
+    if payload.category_id:
+        schema = await db.category_schemas.find_one({
+            "uuid": payload.category_id, "is_deleted": False, "is_active": True,
+        })
+        if not schema:
+            raise HTTPException(status_code=400, detail="Invalid category schema")
+        for field_def in schema.get("fields", []):
+            if field_def.get("is_required") and not payload.fields.get(field_def["field_name"]):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Required field '{field_def['label']}' is missing",
+                )
 
-    # Generate certificate UUID
-    cert_uuid = str(uuid.uuid4())
-    
-    # Generate certificate number
-    cert_number = await next_certificate_number()
-    
-    # Generate QR code URL - use frontend URL from config or default
-    frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
-    qr_code_url = f"{frontend_url}/certificate/{cert_uuid}"
-    
-    # Generate and save QR code to MinIO
-    qr_code_url_path = save_qr_code_to_minio(cert_uuid, qr_code_url, size=200)
-    
-    # Add certificate number to fields if not already present
-    fields_with_cert_no = payload.fields.copy() if payload.fields else {}
-    if "certificate_no" not in fields_with_cert_no and "certificate_number" not in fields_with_cert_no:
-        fields_with_cert_no["certificate_no"] = cert_number
-        fields_with_cert_no["certificate_number"] = cert_number
-    
+    # Promote files with better error handling
+    photo_url = None
+    logo_url = None
+    rear_logo_url = None
+
+    try:
+        if payload.photo_file_id:
+            print(f"🔄 Promoting photo file: {payload.photo_file_id}")
+            photo_url = promote_file_from_temp(payload.photo_file_id)
+            print(f"✅ Photo promoted to: {photo_url}")
+    except Exception as e:
+        print(f"❌ Photo promotion failed: {str(e)}")
+        raise
+
+    try:
+        if payload.logo_file_id:
+            print(f"🔄 Promoting logo file: {payload.logo_file_id}")
+            logo_url = promote_file_from_temp(payload.logo_file_id)
+            print(f"✅ Logo promoted to: {logo_url}")
+    except Exception as e:
+        print(f"❌ Logo promotion failed: {str(e)}")
+        raise
+
+    try:
+        if payload.rear_logo_file_id:
+            print(f"🔄 Promoting rear logo file: {payload.rear_logo_file_id}")
+            rear_logo_url = promote_file_from_temp(payload.rear_logo_file_id)
+            print(f"✅ Rear logo promoted to: {rear_logo_url}")
+    except Exception as e:
+        print(f"❌ Rear logo promotion failed: {str(e)}")
+        raise
+
+    # Generate certificate number (format: G{YYMMDD}{XXXX})
+    certificate_number = await next_certificate_number()
+
     now = datetime.utcnow()
     doc = {
-        "uuid": cert_uuid,
+        "uuid": str(uuid.uuid4()),
+        "certificate_number": certificate_number,
         "type": payload.type,
         "client_id": payload.client_id,
-        "fields": fields_with_cert_no,
+        "category_id": payload.category_id,
+        "fields": payload.fields,
         "photo_url": photo_url,
         "brand_logo_url": logo_url,
-        "qr_code_url": qr_code_url_path,  # Store QR code path in MinIO
-        "photo_edit_completed": payload.photo_edit_completed or False,
+        "rear_brand_logo_url": rear_logo_url,
         "is_deleted": False,
-        "is_rejected": False,
         "created_at": now,
         "updated_at": now,
     }
 
     await db.certifications.insert_one(doc)
-    return {"detail": "Certification created", "uuid": doc["uuid"]}
+    return {
+        "detail": "Certification created",
+        "uuid": doc["uuid"],
+        "certificate_number": doc["certificate_number"]
+    }
 
 
 # 🧱 Bulk Create
@@ -136,38 +167,24 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
             # Promote images if available
             photo_url = promote_file_from_temp(cert.get("photo_file_id")) if cert.get("photo_file_id") else None
             logo_url = promote_file_from_temp(cert.get("logo_file_id")) if cert.get("logo_file_id") else None
+            rear_logo_url = promote_file_from_temp(cert.get("rear_logo_file_id")) if cert.get("rear_logo_file_id") else None
             if photo_url: promoted_files.append(("certificates", photo_url.split("/", 1)[1]))
             if logo_url: promoted_files.append(("certificates", logo_url.split("/", 1)[1]))
+            if rear_logo_url: promoted_files.append(("certificates", rear_logo_url.split("/", 1)[1]))
 
-            # Generate certificate UUID
-            cert_uuid = str(uuid.uuid4())
-            
-            # Generate certificate number
-            cert_number = await next_certificate_number()
-            
-            # Generate QR code URL
-            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
-            qr_code_url = f"{frontend_url}/certificate/{cert_uuid}"
-            
-            # Generate and save QR code to MinIO
-            qr_code_url_path = save_qr_code_to_minio(cert_uuid, qr_code_url, size=200)
-            
-            # Add certificate number to fields if not already present
-            fields_with_cert_no = cert.get("fields", {}).copy()
-            if "certificate_no" not in fields_with_cert_no and "certificate_number" not in fields_with_cert_no:
-                fields_with_cert_no["certificate_no"] = cert_number
-                fields_with_cert_no["certificate_number"] = cert_number
-            
+            # Generate certificate number for each certificate
+            certificate_number = await next_certificate_number()
+
             inserted_docs.append({
-                "uuid": cert_uuid,
+                "uuid": str(uuid.uuid4()),
+                "certificate_number": certificate_number,
                 "type": cert["type"],
                 "client_id": cert["client_id"],
-                "fields": fields_with_cert_no,
+                "fields": cert.get("fields", {}),
                 "photo_url": photo_url,
                 "brand_logo_url": logo_url,
-                "qr_code_url": qr_code_url_path,
+                "rear_brand_logo_url": rear_logo_url,
                 "is_deleted": False,
-                "is_rejected": False,
                 "created_at": now,
                 "updated_at": now
             })
@@ -193,7 +210,7 @@ ALLOWED_SORTS = {
 
 def attach_presigned_urls(doc):
     """
-    Inject presigned URLs for photo, logo, and QR code if present.
+    Inject presigned URLs for photo & logo if present.
     """
     # Photo
     if doc.get("photo_url"):
@@ -211,13 +228,13 @@ def attach_presigned_urls(doc):
         except:
             doc["brand_logo_signed_url"] = None
 
-    # QR Code
-    if doc.get("qr_code_url"):
+    # Rear Logo
+    if doc.get("rear_brand_logo_url"):
         try:
-            bucket, file_id = doc["qr_code_url"].split("/", 1)
-            doc["qr_code_signed_url"] = get_presigned_url(bucket, file_id)
+            bucket, file_id = doc["rear_brand_logo_url"].split("/", 1)
+            doc["rear_brand_logo_signed_url"] = get_presigned_url(bucket, file_id)
         except:
-            doc["qr_code_signed_url"] = None
+            doc["rear_brand_logo_signed_url"] = None
 
     return doc
 
@@ -226,7 +243,6 @@ def attach_presigned_urls(doc):
 async def list_certifications(
     search: Optional[str] = None,
     type: Optional[str] = None,
-    rejected_filter: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
     sort_by: str = "created_at",
@@ -242,12 +258,6 @@ async def list_certifications(
     # Filter by certificate type
     if type:
         filt["type"] = type
-
-    # Filter by rejected status
-    if rejected_filter == "exclude":
-        filt["is_rejected"] = {"$ne": True}
-    elif rejected_filter == "only":
-        filt["is_rejected"] = True
 
     # Search on type & fields
     if search:
@@ -275,6 +285,28 @@ async def list_certifications(
         client = await db.clients.find_one({"uuid": doc["client_id"], "is_deleted": False})
         doc["client"] = {"id": client["uuid"], "name": client["name"]} if client else None
 
+        # Join with category schema (for field definitions and labels)
+        if doc.get("category_id"):
+            schema = await db.category_schemas.find_one({
+                "uuid": doc["category_id"],
+                "is_deleted": False
+            })
+            if schema:
+                doc["schema"] = {
+                    "uuid": schema["uuid"],
+                    "name": schema["name"],
+                    "group": schema["group"],
+                    "fields": schema.get("fields", [])
+                }
+
+                # Render description from template if available
+                description_template = schema.get("description_template")
+                if description_template and doc.get("fields"):
+                    doc["generated_description"] = render_description_template(
+                        description_template,
+                        doc.get("fields", {})
+                    )
+
         serialized = serialize_mongo_doc(doc)
 
         # 🔥 Add presigned URLs
@@ -294,109 +326,176 @@ async def list_certifications(
         "data": items,
     }
 
-
-@router.get("/{uuid}")
-async def get_certification(uuid: str):
-    """
-    Get a single certificate by UUID (public endpoint for QR code viewing)
-    """
+# ✅ Form Schema: returns category schema fields for dynamic form rendering
+# Dynamically populates dropdown options from the attributes collection
+@router.get("/form-schema/{category_uuid}")
+async def get_form_schema(category_uuid: str):
     db = await get_db()
-    doc = await db.certifications.find_one({"uuid": uuid, "is_deleted": False})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Certification not found")
+    schema = await db.category_schemas.find_one({
+        "uuid": category_uuid,
+        "is_deleted": False,
+        "is_active": True,
+    })
+    if not schema:
+        raise HTTPException(status_code=404, detail="Category schema not found")
     
-    serialized = serialize_mongo_doc(doc)
+    # Get the group (certificate type slug) for this schema
+    group = schema.get("group")
     
-    # Add presigned URLs
-    serialized = attach_presigned_urls(serialized)
+    # Dynamically populate options for dropdown and creatable_select fields
+    enriched_fields = []
+    for field in schema.get("fields", []):
+        enriched_field = dict(field)
+        
+        # For dropdown, radio, and creatable_select fields, load options from attributes
+        if field.get("field_type") in {"dropdown", "radio", "creatable_select"}:
+            field_type_key = field.get("field_name")
+            # Fetch attributes for this group/field type
+            cursor = db.attributes.find({
+                "group": group,
+                "type": field_type_key,
+                "is_deleted": False
+            }).sort([("name", 1)])
+            
+            # Extract option names
+            options = [doc.get("name") async for doc in cursor]
+            
+            # If we found attributes, use them; otherwise keep the schema's default options
+            if options:
+                enriched_field["options"] = options
+        
+        enriched_fields.append(enriched_field)
     
-    return serialized
+    schema["fields"] = enriched_fields
+    return serialize_mongo_doc(schema)
+
+
+# ✅ Active category schemas list (for certificate form dropdown)
+@router.get("/available-schemas")
+async def list_available_schemas(group: Optional[str] = None):
+    db = await get_db()
+    filt = {"is_deleted": False, "is_active": True}
+    if group:
+        filt["group"] = group
+    cursor = db.category_schemas.find(filt).sort([("name", 1)])
+    items = []
+    async for doc in cursor:
+        items.append(serialize_mongo_doc({
+            "uuid": doc["uuid"],
+            "name": doc["name"],
+            "group": doc["group"],
+            "field_count": len(doc.get("fields", [])),
+        }))
+    return {"data": items}
 
 
 # ✅ Stats: Overview
 @router.get("/stats")
-async def certificate_stats(current_user: dict = Depends(require_staff)):
-    """
-    Get certificate statistics
-    """
+async def certification_stats(current_user: dict = Depends(require_staff)):
     db = await get_db()
-    
     pipeline = [
         {"$match": {"is_deleted": False}},
-        {"$facet": {
-            "total": [{"$count": "count"}],
-            "by_type": [{"$group": {"_id": "$type", "count": {"$sum": 1}}}],
-            "created_today": [
-                {"$match": {"created_at": {"$gte": datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)}}},
-                {"$count": "count"}
-            ],
-            "pending_photo_edit": [
-                {"$match": {"photo_edit_completed": False, "photo_url": {"$ne": None}}},
-                {"$count": "count"}
-            ],
-        }}
+        {"$group": {"_id": "$type", "count": {"$count": {}}}}
     ]
-    res = await db.certifications.aggregate(pipeline).to_list(1)
-    agg = res[0] if res else {}
-    
-    def _get(lst): return lst[0]["count"] if lst else 0
-    
+    res = await db.certifications.aggregate(pipeline).to_list(None)
+    stats = {d["_id"]: d["count"] for d in res}
+    total = sum(stats.values())
     return {
-        "total_certificates": _get(agg.get("total", [])),
-        "by_type": {d["_id"]: d["count"] for d in agg.get("by_type", [])},
-        "created_today": _get(agg.get("created_today", [])),
-        "pending_photo_edit": _get(agg.get("pending_photo_edit", [])),
+        "total": total,
+        "by_type": stats
     }
 
-
-# ✅ Stats: Daily Certificate Count
+# ✅ Stats: Daily
 @router.get("/stats/daily")
-async def certificate_stats_daily(current_user: dict = Depends(require_staff)):
-    """
-    Get daily certificate creation count
-    """
+async def certification_stats_daily(current_user: dict = Depends(require_staff)):
     db = await get_db()
     pipeline = [
         {"$match": {"is_deleted": False}},
-        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$sum": 1}}},
+        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$count": {}}}},
         {"$sort": {"_id": 1}},
-        {"$limit": 30}  # Last 30 days
     ]
     res = await db.certifications.aggregate(pipeline).to_list(None)
     return {"daily": res}
 
 
-@router.patch("/{uuid}/reject")
-async def reject_certificate(uuid: str, current_user: dict = Depends(require_staff)):
+# ✅ Get Single Certificate by UUID
+@router.get("/{uuid}")
+async def get_certification(uuid: str):
     """
-    Mark a certificate as rejected.
-    When rejected, the certificate will show a rejection message instead of details.
+    Get a single certificate by UUID with schema and presigned URLs.
+    Public endpoint for certificate viewing.
     """
     db = await get_db()
+    doc = await db.certifications.find_one({
+        "uuid": uuid,
+        "is_deleted": False
+    })
 
-    # Find the certificate
-    cert = await db.certifications.find_one({"uuid": uuid, "is_deleted": False})
-    if not cert:
+    if not doc:
         raise HTTPException(status_code=404, detail="Certificate not found")
 
-    # Check if already rejected
-    if cert.get("is_rejected"):
-        raise HTTPException(status_code=400, detail="Certificate is already rejected")
+    # Join with client
+    client = await db.clients.find_one({
+        "uuid": doc["client_id"],
+        "is_deleted": False
+    })
+    doc["client"] = {
+        "id": client["uuid"],
+        "name": client["name"]
+    } if client else None
 
-    # Update the certificate to mark as rejected
-    result = await db.certifications.update_one(
+    # Join with category schema (for field definitions and labels)
+    if doc.get("category_id"):
+        schema = await db.category_schemas.find_one({
+            "uuid": doc["category_id"],
+            "is_deleted": False
+        })
+        if schema:
+            doc["schema"] = {
+                "uuid": schema["uuid"],
+                "name": schema["name"],
+                "group": schema["group"],
+                "fields": schema.get("fields", [])
+            }
+
+            # Render description from template if available
+            description_template = schema.get("description_template")
+            if description_template and doc.get("fields"):
+                doc["generated_description"] = render_description_template(
+                    description_template,
+                    doc.get("fields", {})
+                )
+
+    serialized = serialize_mongo_doc(doc)
+    serialized = attach_presigned_urls(serialized)
+
+    return serialized
+
+
+# ✅ Delete Certificate
+@router.delete("/{uuid}")
+async def delete_certification(uuid: str):
+    """
+    Soft delete a certification by marking it as deleted.
+    """
+    db = await get_db()
+    doc = await db.certifications.find_one({
+        "uuid": uuid,
+        "is_deleted": False
+    })
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    # Soft delete by marking as_deleted
+    await db.certifications.update_one(
         {"uuid": uuid},
         {
             "$set": {
-                "is_rejected": True,
-                "rejected_at": datetime.utcnow(),
-                "rejected_by": current_user.get("uuid"),
+                "is_deleted": True,
                 "updated_at": datetime.utcnow()
             }
         }
     )
 
-    if result.modified_count == 0:
-        raise HTTPException(status_code=500, detail="Failed to reject certificate")
-
-    return {"detail": "Certificate rejected successfully", "uuid": uuid}
+    return {"detail": "Certificate deleted successfully"}

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
 
+    # Super Admin seed
+    SUPER_ADMIN_EMAIL: str = "superadmin@diamonderp.com"
+    SUPER_ADMIN_PASSWORD: str = "SuperAdmin@123"
+    SUPER_ADMIN_NAME: str = "Super Administrator"
+
     # Admin seed
     ADMIN_EMAIL: str = "admin@diamonderp.com"
     ADMIN_PASSWORD: str = "Admin@123"
@@ -31,16 +36,13 @@ class Settings(BaseSettings):
 
 
     MINIO_ENDPOINT: str = "localhost:9000"
-    MINIO_ACCESS_KEY: str = "minioadmin"
-    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_ACCESS_KEY: str = "admin"
+    MINIO_SECRET_KEY: str = "password123"
     MINIO_USE_TLS: bool = False
 
-    # Remove.bg API
-    REMOVE_BG_API_KEY: str = "MXua93vfYeGxtuWoJv8xJEmE"
-    REMOVE_BG_API_URL: str = "https://api.remove.bg/v1.0/removebg"
-    
-    # Frontend URL for QR codes
-    FRONTEND_URL: str = "http://localhost:5173"
+    # Background Removal API
+    REMBG_API_URL: str = "https://rembg.webeazzy.com/api/process-image"
+    REMBG_API_KEY: str
 
 
     class Config:

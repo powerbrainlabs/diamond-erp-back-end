@@ -8,8 +8,6 @@ from ..core.dependencies import require_admin, require_staff
 from ..db.database import get_db
 from ..schemas.client import ClientCreate, ClientUpdate
 from ..utils.serializers import dump_client
-from ..utils.action_logger import auto_log_action
-from fastapi import Request
 
 router = APIRouter(prefix="/api/clients", tags=["Clients"])
 
@@ -17,11 +15,7 @@ ALLOWED_SORTS = {"created_at": "created_at", "name": "name"}
 
 # ✅ Create Client
 @router.post("", status_code=201)
-async def create_client(
-    payload: ClientCreate, 
-    current_user: dict = Depends(require_staff),
-    _: None = Depends(auto_log_action),  # Automatic logging
-):
+async def create_client(payload: ClientCreate, current_user: dict = Depends(require_staff)):
     db = await get_db()
 
     # Check duplicate (email or phone)
@@ -55,11 +49,7 @@ async def create_client(
     }
 
     await db.clients.insert_one(doc)
-    result = dump_client(doc)
-    
-    # No logging code needed - auto_log_action handles it automatically!
-    
-    return result
+    return dump_client(doc)
 
 
 # ✅ List Clients
@@ -102,6 +92,19 @@ async def list_clients(
     }
 
 
+# ✅ Client Stats (MUST be before /{uuid} to avoid route conflict)
+@router.get("/stats")
+async def client_stats(current_user: dict = Depends(require_staff)):
+    db = await get_db()
+    pipeline = [
+        {"$match": {"is_deleted": False}},
+        {"$group": {"_id": None, "total_clients": {"$count": {}}}},
+    ]
+    res = await db.clients.aggregate(pipeline).to_list(1)
+    total = res[0]["total_clients"] if res else 0
+    return {"total_clients": total}
+
+
 # ✅ Get Single Client
 @router.get("/{uuid}")
 async def get_client(uuid: str, current_user: dict = Depends(require_staff)):
@@ -114,12 +117,7 @@ async def get_client(uuid: str, current_user: dict = Depends(require_staff)):
 
 # ✅ Update Client
 @router.put("/{uuid}")
-async def update_client(
-    uuid: str, 
-    payload: ClientUpdate, 
-    current_user: dict = Depends(require_staff),
-    _: None = Depends(auto_log_action),  # Automatic logging
-):
+async def update_client(uuid: str, payload: ClientUpdate, current_user: dict = Depends(require_staff)):
     db = await get_db()
     doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
@@ -134,20 +132,12 @@ async def update_client(
     updates["updated_at"] = datetime.utcnow()
     await db.clients.update_one({"_id": doc["_id"]}, {"$set": updates})
     fresh = await db.clients.find_one({"_id": doc["_id"]})
-    result = dump_client(fresh)
-    
-    # No logging code needed - auto_log_action handles it automatically!
-    
-    return result
+    return dump_client(fresh)
 
 
 # ✅ Soft Delete Client
 @router.delete("/{uuid}")
-async def delete_client(
-    uuid: str, 
-    current_user: dict = Depends(require_admin),
-    _: None = Depends(auto_log_action),  # Automatic logging
-):
+async def delete_client(uuid: str, current_user: dict = Depends(require_admin)):
     db = await get_db()
     doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False})
     if not doc:
@@ -156,20 +146,4 @@ async def delete_client(
         {"_id": doc["_id"]},
         {"$set": {"is_deleted": True, "updated_at": datetime.utcnow()}},
     )
-    
-    # No logging code needed - auto_log_action handles it automatically!
-    
     return {"detail": "Client deleted"}
-
-
-# ✅ Client Stats
-@router.get("/stats")
-async def client_stats(current_user: dict = Depends(require_staff)):
-    db = await get_db()
-    pipeline = [
-        {"$match": {"is_deleted": False}},
-        {"$group": {"_id": None, "total_clients": {"$sum": 1}}},
-    ]
-    res = await db.clients.aggregate(pipeline).to_list(1)
-    total = res[0]["total_clients"] if res and res[0] else 0
-    return {"total_clients": total}
