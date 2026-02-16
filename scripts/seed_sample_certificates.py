@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-Script to generate sample certificates for testing certificate card designs.
-Generates 3-4 certificates for each certificate type with realistic data.
+Script to generate sample certificates using dynamic attributes from the database.
+Generates 3-4 certificates for each certificate type with realistic data from attributes collection.
 
 Usage:
     python scripts/seed_sample_certificates.py
 
     Or from backend directory:
-    ../venv/bin/python scripts/seed_sample_certificates.py
+    ../venv/bin/activate && python scripts/seed_sample_certificates.py
 """
 
 import asyncio
 import sys
 import os
+import random
 from pathlib import Path
 from datetime import datetime
 import uuid as uuid_lib
@@ -24,305 +25,28 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from app.core.config import settings
 
 
-# Sample data for different certificate types
-SAMPLE_DATA = {
-    "single_diamond": [
-        {
-            "client_name": "Rajesh Jewelers",
-            "fields": {
-                "category": "Ring",
-                "metal_type": "Gold 18K",
-                "gross_weight": "5.25",
-                "diamond_weight": "0.75",
-                "diamond_piece": "1",
-                "cut": "Excellent",
-                "clarity": "VVS1 (Very Very Slightly Included)",
-                "color": "D (Colorless)",
-                "conclusion": "Natural Diamond",
-                "description": "One Gold 18K Ring Studded with 1 Natural Diamond.",
-                "comment": "No visible inclusions under 10x magnification"
-            }
-        },
-        {
-            "client_name": "Diamond Palace",
-            "fields": {
-                "category": "Earring",
-                "metal_type": "White Gold 18K",
-                "gross_weight": "3.80",
-                "diamond_weight": "1.25",
-                "diamond_piece": "12",
-                "cut": "Very Good",
-                "clarity": "VS1 (Very Slightly Included)",
-                "color": "E (Colorless)",
-                "conclusion": "Natural Diamond",
-                "description": "One pair of White Gold 18K Earring Studded with 12 Natural Diamonds.",
-                "comment": "Minor inclusions visible under 10x"
-            }
-        },
-        {
-            "client_name": "Heritage Jewels",
-            "fields": {
-                "category": "Pendant",
-                "metal_type": "Platinum",
-                "gross_weight": "4.15",
-                "diamond_weight": "0.50",
-                "diamond_piece": "1",
-                "cut": "Excellent",
-                "clarity": "IF (Internally Flawless)",
-                "color": "F (Colorless)",
-                "conclusion": "Natural Diamond",
-                "description": "One Platinum Pendant Studded with 1 Natural Diamond.",
-                "comment": "Exceptional clarity and brilliance"
-            }
-        },
-        {
-            "client_name": "Royal Gems",
-            "fields": {
-                "category": "Bracelet",
-                "metal_type": "Gold 22K",
-                "gross_weight": "12.50",
-                "diamond_weight": "2.10",
-                "diamond_piece": "24",
-                "cut": "Good",
-                "clarity": "SI1 (Slightly Included)",
-                "color": "G (Near Colorless)",
-                "conclusion": "Natural Diamond",
-                "description": "One Gold 22K Bracelet Studded with 24 Natural Diamonds.",
-                "comment": "Slight inclusions visible under magnification"
-            }
-        }
-    ],
-    "loose_diamond": [
-        {
-            "client_name": "Diamond Trading Co.",
-            "fields": {
-                "shape": "Round",
-                "weight": "1.52",
-                "dimension": "7.42x7.45x4.58",
-                "cut": "Excellent",
-                "clarity": "VVS2 (Very Very Slightly Included)",
-                "color": "E (Colorless)",
-                "hardness": "10 (Mohs Scale)",
-                "sg": "3.52",
-                "microscopic_obs": "Pinpoint inclusions",
-                "conclusion": "Natural Diamond",
-                "comment": "Superior cut and polish"
-            }
-        },
-        {
-            "client_name": "Brilliant Diamonds",
-            "fields": {
-                "shape": "Princess",
-                "weight": "0.95",
-                "dimension": "5.85x5.80x4.12",
-                "cut": "Very Good",
-                "clarity": "VS2 (Very Slightly Included)",
-                "color": "F (Colorless)",
-                "hardness": "10 (Mohs Scale)",
-                "sg": "3.52",
-                "microscopic_obs": "Feather inclusions",
-                "conclusion": "Natural Diamond",
-                "comment": "Good symmetry and proportions"
-            }
-        },
-        {
-            "client_name": "Sparkle Gems",
-            "fields": {
-                "shape": "Cushion",
-                "weight": "2.03",
-                "dimension": "8.12x7.95x5.24",
-                "cut": "Excellent",
-                "clarity": "IF (Internally Flawless)",
-                "color": "D (Colorless)",
-                "hardness": "10 (Mohs Scale)",
-                "sg": "3.52",
-                "microscopic_obs": "No inclusions visible",
-                "conclusion": "Natural Diamond",
-                "comment": "Exceptional quality, museum grade"
-            }
-        }
-    ],
-    "loose_stone": [
-        {
-            "client_name": "Ruby Trading House",
-            "fields": {
-                "gemstone_type": "Ruby",
-                "shape": "Oval",
-                "weight": "3.25",
-                "dimension": "9.5x7.8x5.2",
-                "color": "Pigeon Blood Red",
-                "sg": "3.99-4.00",
-                "ri": "1.762-1.770",
-                "hardness": "9 (Mohs Scale)",
-                "microscopic_obs": "Natural rutile needles",
-                "conclusion": "Natural Ruby (Corundum)",
-                "comment": "Unheated, Burmese origin"
-            }
-        },
-        {
-            "client_name": "Sapphire Emporium",
-            "fields": {
-                "gemstone_type": "Blue Sapphire",
-                "shape": "Cushion",
-                "weight": "5.12",
-                "dimension": "11.2x9.8x6.5",
-                "color": "Royal Blue",
-                "sg": "3.99-4.00",
-                "ri": "1.762-1.770",
-                "hardness": "9 (Mohs Scale)",
-                "microscopic_obs": "Zoning pattern visible",
-                "conclusion": "Natural Blue Sapphire (Corundum)",
-                "comment": "Ceylon origin, heat treated"
-            }
-        },
-        {
-            "client_name": "Emerald Gallery",
-            "fields": {
-                "gemstone_type": "Emerald",
-                "shape": "Emerald Cut",
-                "weight": "2.85",
-                "dimension": "9.1x7.3x5.8",
-                "color": "Vivid Green",
-                "sg": "2.67-2.78",
-                "ri": "1.577-1.583",
-                "hardness": "7.5-8 (Mohs Scale)",
-                "microscopic_obs": "Three-phase inclusions",
-                "conclusion": "Natural Emerald (Beryl)",
-                "comment": "Colombian origin, minor oil treatment"
-            }
-        }
-    ],
-    "single_mounded": [
-        {
-            "client_name": "Classic Jewelers",
-            "fields": {
-                "gemstone_type": "Ruby",
-                "metal_type": "Gold 18K",
-                "gross_weight": "6.45",
-                "gemstone_weight": "2.15",
-                "shape": "Oval",
-                "sg": "3.99-4.00",
-                "hardness": "9 (Mohs Scale)",
-                "ri": "1.762-1.770",
-                "microscopic_obs": "Silk inclusions",
-                "conclusion": "Natural Ruby (Corundum)",
-                "comment": "Beautiful pigeon blood color"
-            }
-        },
-        {
-            "client_name": "Sapphire House",
-            "fields": {
-                "gemstone_type": "Blue Sapphire",
-                "metal_type": "Platinum",
-                "gross_weight": "8.20",
-                "gemstone_weight": "3.80",
-                "shape": "Cushion",
-                "sg": "3.99-4.00",
-                "hardness": "9 (Mohs Scale)",
-                "ri": "1.762-1.770",
-                "microscopic_obs": "Color zoning",
-                "conclusion": "Natural Blue Sapphire (Corundum)",
-                "comment": "Ceylon origin"
-            }
-        },
-        {
-            "client_name": "Emerald Palace",
-            "fields": {
-                "gemstone_type": "Emerald",
-                "metal_type": "Gold 22K",
-                "gross_weight": "5.95",
-                "gemstone_weight": "1.85",
-                "shape": "Emerald Cut",
-                "sg": "2.67-2.78",
-                "hardness": "7.5-8 (Mohs Scale)",
-                "ri": "1.577-1.583",
-                "microscopic_obs": "Jardin inclusions",
-                "conclusion": "Natural Emerald (Beryl)",
-                "comment": "Colombian origin with typical inclusions"
-            }
-        }
-    ],
-    "double_mounded": [
-        {
-            "client_name": "Twin Gems",
-            "fields": {
-                "primary_gemstone": "Ruby",
-                "secondary_gemstone": "Diamond",
-                "metal_type": "Gold 18K",
-                "gross_weight": "7.80",
-                "primary_stone_weight": "1.95",
-                "secondary_stone_weight": "0.65",
-                "shape": "Oval & Round",
-                "sg": "3.99 & 3.52",
-                "ri": "1.762-1.770 & 2.417",
-                "hardness": "9 & 10 (Mohs Scale)",
-                "microscopic_obs": "Ruby: silk inclusions | Diamond: feather",
-                "conclusion": "Natural Ruby & Natural Diamond"
-            }
-        },
-        {
-            "client_name": "Duo Jewels",
-            "fields": {
-                "primary_gemstone": "Emerald",
-                "secondary_gemstone": "Diamond",
-                "metal_type": "Platinum",
-                "gross_weight": "6.95",
-                "primary_stone_weight": "1.50",
-                "secondary_stone_weight": "0.45",
-                "shape": "Emerald & Princess",
-                "sg": "2.70 & 3.52",
-                "ri": "1.577-1.583 & 2.417",
-                "hardness": "8 & 10 (Mohs Scale)",
-                "microscopic_obs": "Emerald: jardin | Diamond: pinpoint",
-                "conclusion": "Natural Emerald & Natural Diamond"
-            }
-        }
-    ],
-    "navaratna": [
-        {
-            "client_name": "Navaratna Creations",
-            "fields": {
-                "metal_type": "Gold 22K",
-                "gross_weight": "18.50",
-                "ruby_weight": "1.25",
-                "pearl_weight": "2.10",
-                "coral_weight": "1.85",
-                "emerald_weight": "1.15",
-                "yellow_sapphire_weight": "1.35",
-                "diamond_weight": "0.95",
-                "blue_sapphire_weight": "1.45",
-                "hessonite_weight": "1.55",
-                "cats_eye_weight": "1.65",
-                "cut": "Mixed",
-                "color": "Multi-colored",
-                "clarity": "Eye Clean",
-                "conclusion": "Natural Gemstones",
-                "comment": "Traditional Navaratna setting with 9 auspicious gems"
-            }
-        },
-        {
-            "client_name": "Astrological Gems",
-            "fields": {
-                "metal_type": "Gold 18K",
-                "gross_weight": "15.75",
-                "ruby_weight": "1.05",
-                "pearl_weight": "1.85",
-                "coral_weight": "1.55",
-                "emerald_weight": "0.95",
-                "yellow_sapphire_weight": "1.15",
-                "diamond_weight": "0.75",
-                "blue_sapphire_weight": "1.25",
-                "hessonite_weight": "1.35",
-                "cats_eye_weight": "1.45",
-                "cut": "Mixed",
-                "color": "Multi-colored",
-                "clarity": "Eye Clean",
-                "conclusion": "Natural Gemstones",
-                "comment": "Premium quality Navaratna pendant"
-            }
-        }
-    ]
-}
+async def get_random_attribute(db, group: str, attr_type: str):
+    """Get a random attribute value from the attributes collection."""
+    cursor = db.attributes.find({
+        "group": group,
+        "type": attr_type,
+        "is_deleted": False
+    })
+    attrs = await cursor.to_list(length=100)
+    if attrs:
+        return random.choice(attrs)["name"]
+    return None
+
+
+async def get_all_attributes(db, group: str, attr_type: str):
+    """Get all attribute values for a specific group and type."""
+    cursor = db.attributes.find({
+        "group": group,
+        "type": attr_type,
+        "is_deleted": False
+    }).sort([("name", 1)])
+    attrs = await cursor.to_list(length=100)
+    return [attr["name"] for attr in attrs]
 
 
 async def get_or_create_client(db, client_name: str) -> str:
@@ -343,21 +67,204 @@ async def get_or_create_client(db, client_name: str) -> str:
         "gst_number": None,
         "notes": f"Sample client for {client_name}",
         "is_deleted": False,
+        "created_by": "system",
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow(),
     })
     return client_uuid
 
 
+async def generate_single_diamond_certificate(db, client_name: str):
+    """Generate a single diamond certificate with dynamic attributes."""
+    return {
+        "client_name": client_name,
+        "fields": {
+            "category": await get_random_attribute(db, "diamond", "category") or "Ring",
+            "metal": await get_random_attribute(db, "diamond", "metal_type") or "Gold 18K",
+            "gross_weight": f"{random.uniform(3.0, 15.0):.2f}",
+            "diamond_weight": f"{random.uniform(0.3, 3.0):.2f}",
+            "diamond_piece": str(random.randint(1, 50)),
+            "cut": await get_random_attribute(db, "diamond", "cut") or "Excellent",
+            "clarity": await get_random_attribute(db, "diamond", "clarity") or "VVS1",
+            "color": await get_random_attribute(db, "diamond", "color") or "D",
+            "conclusion": await get_random_attribute(db, "diamond", "conclusion") or "Natural Diamond",
+            "comment": random.choice([
+                "Excellent quality with superior characteristics",
+                "No visible inclusions under 10x magnification",
+                "Minor inclusions visible under magnification",
+                "Exceptional clarity and brilliance",
+                ""  # Sometimes empty
+            ])
+        }
+    }
+
+
+async def generate_loose_diamond_certificate(db, client_name: str):
+    """Generate a loose diamond certificate with dynamic attributes."""
+    return {
+        "client_name": client_name,
+        "fields": {
+            "shape": await get_random_attribute(db, "gemstone", "gemstone_shape") or "Round",
+            "weight": f"{random.uniform(0.5, 3.0):.2f}",
+            "dimension": f"{random.uniform(5.0, 9.0):.2f}x{random.uniform(5.0, 9.0):.2f}x{random.uniform(3.0, 6.0):.2f}",
+            "cut": await get_random_attribute(db, "diamond", "cut") or "Excellent",
+            "clarity": await get_random_attribute(db, "diamond", "clarity") or "VVS2",
+            "color": await get_random_attribute(db, "diamond", "color") or "E",
+            "hardness": "10 (Mohs Scale)",
+            "sg": "3.52",
+            "microscopic_obs": await get_random_attribute(db, "gemstone", "microscopic_observation") or "Clean",
+            "conclusion": await get_random_attribute(db, "diamond", "conclusion") or "Natural Diamond",
+            "comment": random.choice([
+                "Superior cut and polish",
+                "Good symmetry and proportions",
+                "Exceptional quality",
+                ""
+            ])
+        }
+    }
+
+
+async def generate_loose_stone_certificate(db, client_name: str):
+    """Generate a loose stone (gemstone) certificate with dynamic attributes."""
+    gemstone = await get_random_attribute(db, "gemstone", "gemstone") or "Ruby"
+    return {
+        "client_name": client_name,
+        "fields": {
+            "gemstone": gemstone,
+            "shape": await get_random_attribute(db, "gemstone", "gemstone_shape") or "Oval",
+            "weight": f"{random.uniform(1.0, 5.0):.2f}",
+            "dimension": f"{random.uniform(7.0, 12.0):.1f}x{random.uniform(6.0, 10.0):.1f}x{random.uniform(4.0, 7.0):.1f}",
+            "color": random.choice(["Pigeon Blood Red", "Royal Blue", "Vivid Green", "Deep Purple"]),
+            "sg": f"{random.uniform(2.6, 4.1):.2f}",
+            "ri": f"{random.uniform(1.5, 1.8):.3f}",
+            "hardness": f"{random.randint(7, 9)} (Mohs Scale)",
+            "microscopic_obs": await get_random_attribute(db, "gemstone", "microscopic_observation") or "Natural inclusions",
+            "conclusion": f"Natural {gemstone}",
+            "comment": random.choice([
+                "Unheated, excellent origin",
+                "Heat treated for color enhancement",
+                "Natural with typical inclusions",
+                ""
+            ])
+        }
+    }
+
+
+async def generate_single_mounded_certificate(db, client_name: str):
+    """Generate a single mounded (gemstone in setting) certificate."""
+    gemstone = await get_random_attribute(db, "gemstone", "gemstone") or "Sapphire"
+    return {
+        "client_name": client_name,
+        "fields": {
+            "gemstone": gemstone,
+            "category": await get_random_attribute(db, "gemstone", "category") or "Ring",
+            "metal": await get_random_attribute(db, "gemstone", "metal_type") or "Gold 18K",
+            "gemstone_piece": str(random.randint(1, 5)),
+            "gross_weight": f"{random.uniform(4.0, 10.0):.2f}",
+            "stone_weight": f"{random.uniform(1.0, 4.0):.2f}",
+            "shape": await get_random_attribute(db, "gemstone", "gemstone_shape") or "Oval",
+            "sg": f"{random.uniform(2.6, 4.1):.2f}",
+            "hardness": f"{random.randint(7, 9)} (Mohs Scale)",
+            "ri": f"{random.uniform(1.5, 1.8):.3f}",
+            "microscopic_obs": await get_random_attribute(db, "gemstone", "microscopic_observation") or "Inclusions",
+            "conclusion": f"Natural {gemstone}",
+            "comment": random.choice(["Beautiful color", "Excellent setting", "Premium quality", ""])
+        }
+    }
+
+
+
+async def generate_double_mounded_certificate(db, client_name: str):
+    """Generate a double mounded (two gemstones) certificate."""
+    primary_gem = await get_random_attribute(db, "gemstone", "gemstone") or "Ruby"
+    return {
+        "client_name": client_name,
+        "fields": {
+            "primary_gemstone": primary_gem,
+            "secondary_gemstone": "Diamond",
+            "metal": await get_random_attribute(db, "gemstone", "metal_type") or "Platinum",
+            "gross_weight": f"{random.uniform(5.0, 10.0):.2f}",
+            "primary_stone_weight": f"{random.uniform(1.0, 3.0):.2f}",
+            "secondary_stone_weight": f"{random.uniform(0.3, 1.0):.2f}",
+            "shape": random.choice(["Oval & Round", "Cushion & Princess", "Emerald & Round"]),
+            "sg": f"{random.uniform(3.5, 4.0):.2f} & 3.52",
+            "ri": f"{random.uniform(1.7, 1.8):.3f} & 2.417",
+            "hardness": "9 & 10 (Mohs Scale)",
+            "microscopic_obs": f"{primary_gem}: natural inclusions | Diamond: clean",
+            "conclusion": f"Natural {primary_gem} & Natural Diamond",
+            "comment": ""
+        }
+    }
+
+
+async def generate_navaratna_certificate(db, client_name: str):
+    """Generate a navaratna (nine gems) certificate."""
+    return {
+        "client_name": client_name,
+        "fields": {
+            "metal": await get_random_attribute(db, "navaratna", "metal_type") or "Gold 22K",
+            "gross_weight": f"{random.uniform(12.0, 20.0):.2f}",
+            "ruby_weight": f"{random.uniform(0.8, 1.5):.2f}",
+            "pearl_weight": f"{random.uniform(1.5, 2.5):.2f}",
+            "coral_weight": f"{random.uniform(1.2, 2.0):.2f}",
+            "emerald_weight": f"{random.uniform(0.8, 1.5):.2f}",
+            "yellow_sapphire_weight": f"{random.uniform(1.0, 1.8):.2f}",
+            "diamond_weight": f"{random.uniform(0.5, 1.2):.2f}",
+            "blue_sapphire_weight": f"{random.uniform(1.0, 1.8):.2f}",
+            "hessonite_weight": f"{random.uniform(1.2, 2.0):.2f}",
+            "cats_eye_weight": f"{random.uniform(1.3, 2.0):.2f}",
+            "cut": "Mixed",
+            "color": "Multi-colored",
+            "clarity": "Eye Clean",
+            "conclusion": "Natural Gemstones",
+            "comment": random.choice([
+                "Traditional Navaratna setting with 9 auspicious gems",
+                "Premium quality Navaratna pendant",
+                "Astrological quality gemstones",
+                ""
+            ])
+        }
+    }
+
+
+# Client names for each certificate type
+CLIENT_NAMES = {
+    "single_diamond": ["Rajesh Jewelers", "Diamond Palace", "Heritage Jewels", "Royal Gems"],
+    "loose_diamond": ["Diamond Trading Co.", "Brilliant Diamonds", "Sparkle Gems"],
+    "loose_stone": ["Ruby Trading House", "Sapphire Emporium", "Emerald Gallery"],
+    "single_mounded": ["Classic Jewelers", "Sapphire House", "Emerald Palace"],
+    "double_mounded": ["Twin Gems", "Duo Jewels"],
+    "navaratna": ["Navaratna Creations", "Astrological Gems"],
+}
+
+
+CERTIFICATE_GENERATORS = {
+    "single_diamond": generate_single_diamond_certificate,
+    "loose_diamond": generate_loose_diamond_certificate,
+    "loose_stone": generate_loose_stone_certificate,
+    "single_mounded": generate_single_mounded_certificate,
+    "double_mounded": generate_double_mounded_certificate,
+    "navaratna": generate_navaratna_certificate,
+}
+
+
 async def seed_certificates():
-    """Generate sample certificates for all certificate types"""
+    """Generate sample certificates for all certificate types using dynamic attributes."""
 
     # Connect to MongoDB
     client = AsyncIOMotorClient(settings.MONGODB_URL)
     db = client[settings.DATABASE_NAME]
 
-    print("🌱 Starting certificate seeding...")
+    print("🌱 Starting certificate seeding with dynamic attributes...")
     print(f"📊 Connected to database: {settings.DATABASE_NAME}")
+
+    # Check if attributes exist
+    attr_count = await db.attributes.count_documents({"is_deleted": False})
+    if attr_count == 0:
+        print("⚠️  Warning: No attributes found in database. Certificates will use fallback values.")
+        print("   Run the application first to seed default attributes.")
+    else:
+        print(f"✅ Found {attr_count} attributes in database")
 
     # Get all certificate types
     cert_types = await db.certificate_types.find({
@@ -390,20 +297,25 @@ async def seed_certificates():
             print(f"  ⚠️  No schema found for {type_slug}, skipping...")
             continue
 
-        # Get sample data for this type
-        samples = SAMPLE_DATA.get(type_slug, [])
-        if not samples:
-            print(f"  ⚠️  No sample data defined for {type_slug}, skipping...")
+        # Get generator function
+        generator = CERTIFICATE_GENERATORS.get(type_slug)
+        if not generator:
+            print(f"  ⚠️  No generator function for {type_slug}, skipping...")
             continue
 
-        print(f"  📋 Creating {len(samples)} sample certificates...")
+        # Get client names for this type
+        client_names = CLIENT_NAMES.get(type_slug, [f"Client {i}" for i in range(1, 4)])
+        
+        print(f"  📋 Creating {len(client_names)} sample certificates...")
 
-        for idx, sample in enumerate(samples, 1):
+        for idx, client_name in enumerate(client_names, 1):
+            # Generate certificate data dynamically
+            cert_data = await generator(db, client_name)
+            
             # Get or create client
-            client_uuid = await get_or_create_client(db, sample["client_name"])
+            client_uuid = await get_or_create_client(db, cert_data["client_name"])
 
-            # Generate certificate number (simple sequential for testing)
-            # In production, this would use next_certificate_number()
+            # Generate certificate number
             today = datetime.utcnow()
             cert_number = f"G{today.strftime('%y%m%d')}{total_created + 1:04d}"
 
@@ -414,13 +326,11 @@ async def seed_certificates():
                 "type": type_slug,
                 "client_id": client_uuid,
                 "category_id": schema["uuid"],
-                "fields": sample["fields"],
-                "photo_url": None,  # Could add sample images later
+                "fields": cert_data["fields"],
+                "photo_url": None,
                 "brand_logo_url": None,
                 "rear_brand_logo_url": None,
-                "qr_code_url": None,
                 "is_deleted": False,
-                "is_rejected": False,
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
             }
@@ -429,7 +339,7 @@ async def seed_certificates():
             await db.certifications.insert_one(cert_doc)
             total_created += 1
 
-            print(f"    ✓ Certificate #{idx}: {cert_number} (Client: {sample['client_name']})")
+            print(f"    ✓ Certificate #{idx}: {cert_number} (Client: {cert_data['client_name']})")
 
     print(f"\n✨ Seeding completed!")
     print(f"📊 Total certificates created: {total_created}")
@@ -441,7 +351,7 @@ async def seed_certificates():
 async def clear_existing_certificates():
     """Clear existing sample certificates (optional - for re-seeding)"""
     client = AsyncIOMotorClient(settings.MONGODB_URL)
-    db = client[settings.MONGODB_DB]
+    db = client[settings.DATABASE_NAME]
 
     result = await db.certifications.delete_many({})
     print(f"🗑️  Cleared {result.deleted_count} existing certificates")
@@ -452,7 +362,7 @@ async def clear_existing_certificates():
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Seed sample certificates")
+    parser = argparse.ArgumentParser(description="Seed sample certificates with dynamic attributes")
     parser.add_argument("--clear", action="store_true", help="Clear existing certificates before seeding")
     args = parser.parse_args()
 

@@ -30,6 +30,17 @@ def dump_job(doc) -> dict:
 def dump_client(doc):
     if not doc:
         return None
+    
+    # Handle created_by field - can be string or dict with ObjectId
+    created_by = doc.get("created_by")
+    if isinstance(created_by, dict):
+        # Convert ObjectId to string if present
+        created_by = {
+            "user_id": str(created_by.get("user_id")) if created_by.get("user_id") else None,
+            "name": created_by.get("name"),
+            "email": created_by.get("email"),
+        }
+    
     return {
         "id": doc["uuid"],
         "name": doc["name"],
@@ -39,7 +50,7 @@ def dump_client(doc):
         "address": doc.get("address"),
         "gst_number": doc.get("gst_number"),
         "notes": doc.get("notes"),
-        "created_by": doc["created_by"],
+        "created_by": created_by,
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],
     }

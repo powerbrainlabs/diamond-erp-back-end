@@ -17,13 +17,36 @@ router = APIRouter(prefix="/api/certifications", tags=["Certifications"])
 
 
 def promote_file_from_temp(file_id: str) -> str:
+    # Handle empty or None file_id
+    if not file_id or file_id.strip() == "":
+        raise HTTPException(
+            status_code=400,
+            detail="File ID is empty or invalid"
+        )
+
     src_bucket = "cert-temp"
     dest_bucket = "certificates"
     try:
+        # Check if file exists in temp bucket before trying to move it
+        try:
+            minio_client.stat_object(src_bucket, file_id)
+        except Exception as stat_error:
+            raise HTTPException(
+                status_code=404,
+                detail=f"File not found in temporary storage: {file_id}. "
+                       f"Please re-upload the file. Error: {str(stat_error)}"
+            )
+
+        # Copy file from temp to permanent bucket
         source = CopySource(src_bucket, file_id)
         minio_client.copy_object(dest_bucket, file_id, source)
+
+        # Remove from temp bucket after successful copy
         minio_client.remove_object(src_bucket, file_id)
+
         return f"{dest_bucket}/{file_id}"
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File move failed: {str(e)}")
 
@@ -46,6 +69,9 @@ async def create_certification(
 ):
     db = await get_db()
 
+    print(f"📝 Creating certification with payload: type={payload.type}, client_id={payload.client_id}")
+    print(f"📸 File IDs - photo: {payload.photo_file_id}, logo: {payload.logo_file_id}, rear_logo: {payload.rear_logo_file_id}")
+
     client = await db.clients.find_one({"uuid": payload.client_id, "is_deleted": False})
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -64,21 +90,37 @@ async def create_certification(
                     detail=f"Required field '{field_def['label']}' is missing",
                 )
 
-    photo_url = (
-        promote_file_from_temp(payload.photo_file_id)
-        if payload.photo_file_id
-        else None
-    )
-    logo_url = (
-        promote_file_from_temp(payload.logo_file_id)
-        if payload.logo_file_id
-        else None
-    )
-    rear_logo_url = (
-        promote_file_from_temp(payload.rear_logo_file_id)
-        if payload.rear_logo_file_id
-        else None
-    )
+    # Promote files with better error handling
+    photo_url = None
+    logo_url = None
+    rear_logo_url = None
+
+    try:
+        if payload.photo_file_id:
+            print(f"🔄 Promoting photo file: {payload.photo_file_id}")
+            photo_url = promote_file_from_temp(payload.photo_file_id)
+            print(f"✅ Photo promoted to: {photo_url}")
+    except Exception as e:
+        print(f"❌ Photo promotion failed: {str(e)}")
+        raise
+
+    try:
+        if payload.logo_file_id:
+            print(f"🔄 Promoting logo file: {payload.logo_file_id}")
+            logo_url = promote_file_from_temp(payload.logo_file_id)
+            print(f"✅ Logo promoted to: {logo_url}")
+    except Exception as e:
+        print(f"❌ Logo promotion failed: {str(e)}")
+        raise
+
+    try:
+        if payload.rear_logo_file_id:
+            print(f"🔄 Promoting rear logo file: {payload.rear_logo_file_id}")
+            rear_logo_url = promote_file_from_temp(payload.rear_logo_file_id)
+            print(f"✅ Rear logo promoted to: {rear_logo_url}")
+    except Exception as e:
+        print(f"❌ Rear logo promotion failed: {str(e)}")
+        raise
 
     # Generate certificate number (format: G{YYMMDD}{XXXX})
     certificate_number = await next_certificate_number()

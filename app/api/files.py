@@ -36,6 +36,15 @@ async def upload_temp_file(files: List[UploadFile] = File(...)):
                 content_type=file.content_type
             )
 
+            # Verify the file was uploaded successfully
+            try:
+                minio_client.stat_object("cert-temp", file_id)
+            except Exception as verify_error:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"File upload verification failed for {file.filename}: {str(verify_error)}"
+                )
+
             uploaded.append({
                 "file_id": file_id,
                 "bucket": "cert-temp",
@@ -44,6 +53,10 @@ async def upload_temp_file(files: List[UploadFile] = File(...)):
                 "uploaded_at": datetime.utcnow().isoformat()
             })
 
+            print(f"✅ Successfully uploaded file: {file_id} to cert-temp bucket")
+
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Upload failed for {file.filename}: {str(e)}")
 
@@ -59,6 +72,31 @@ async def get_presigned_file(bucket: str, file_id: str):
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/verify-temp/{file_id}")
+async def verify_temp_file(file_id: str):
+    """
+    Verify if a file exists in the cert-temp bucket.
+    Useful for debugging upload issues.
+    """
+    try:
+        stat = minio_client.stat_object("cert-temp", file_id)
+        return {
+            "exists": True,
+            "file_id": file_id,
+            "bucket": "cert-temp",
+            "size": stat.size,
+            "last_modified": stat.last_modified.isoformat() if stat.last_modified else None,
+            "content_type": stat.content_type
+        }
+    except Exception as e:
+        return {
+            "exists": False,
+            "file_id": file_id,
+            "bucket": "cert-temp",
+            "error": str(e)
+        }
 
 
 @router.post("/remove-background")
