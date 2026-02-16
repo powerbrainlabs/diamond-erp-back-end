@@ -37,7 +37,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     # Initialize MinIO buckets
-    await ensure_buckets()
+    ensure_buckets()
     
     # Initialize database
     db = await init_db()
@@ -84,9 +84,6 @@ async def startup_event():
     # Seed default category schemas if none exist
     from .utils.seed_schemas import seed_default_category_schemas
     await seed_default_category_schemas(db)
-
-    # Ensure MinIO buckets exist
-    ensure_buckets()
 
 # Routers
 app.include_router(auth_router)
