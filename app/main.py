@@ -66,6 +66,10 @@ async def startup_event():
             "updated_at": now,
         })
 
+    # Seed default attributes (dropdown values) if none exist
+    from .utils.seed_schemas import seed_default_attributes
+    await seed_default_attributes(db)
+
     # Seed default certificate types if none exist
     from .utils.seed_schemas import seed_default_certificate_types
     await seed_default_certificate_types(db)

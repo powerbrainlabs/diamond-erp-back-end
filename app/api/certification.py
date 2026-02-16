@@ -10,6 +10,8 @@ from ..db.database import get_db
 from ..core.dependencies import require_staff
 from ..utils.minio_helpers import get_presigned_url
 from ..utils.serializers import serialize_mongo_doc
+from ..utils.cert_numbering import next_certificate_number
+from ..utils.template_renderer import render_description_template
 
 router = APIRouter(prefix="/api/certifications", tags=["Certifications"])
 
@@ -78,9 +80,13 @@ async def create_certification(
         else None
     )
 
+    # Generate certificate number (format: G{YYMMDD}{XXXX})
+    certificate_number = await next_certificate_number()
+
     now = datetime.utcnow()
     doc = {
         "uuid": str(uuid.uuid4()),
+        "certificate_number": certificate_number,
         "type": payload.type,
         "client_id": payload.client_id,
         "category_id": payload.category_id,
@@ -94,7 +100,11 @@ async def create_certification(
     }
 
     await db.certifications.insert_one(doc)
-    return {"detail": "Certification created", "uuid": doc["uuid"]}
+    return {
+        "detail": "Certification created",
+        "uuid": doc["uuid"],
+        "certificate_number": doc["certificate_number"]
+    }
 
 
 # 🧱 Bulk Create
@@ -120,8 +130,12 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
             if logo_url: promoted_files.append(("certificates", logo_url.split("/", 1)[1]))
             if rear_logo_url: promoted_files.append(("certificates", rear_logo_url.split("/", 1)[1]))
 
+            # Generate certificate number for each certificate
+            certificate_number = await next_certificate_number()
+
             inserted_docs.append({
                 "uuid": str(uuid.uuid4()),
+                "certificate_number": certificate_number,
                 "type": cert["type"],
                 "client_id": cert["client_id"],
                 "fields": cert.get("fields", {}),
@@ -242,6 +256,14 @@ async def list_certifications(
                     "group": schema["group"],
                     "fields": schema.get("fields", [])
                 }
+
+                # Render description from template if available
+                description_template = schema.get("description_template")
+                if description_template and doc.get("fields"):
+                    doc["generated_description"] = render_description_template(
+                        description_template,
+                        doc.get("fields", {})
+                    )
 
         serialized = serialize_mongo_doc(doc)
 
@@ -393,6 +415,14 @@ async def get_certification(uuid: str):
                 "group": schema["group"],
                 "fields": schema.get("fields", [])
             }
+
+            # Render description from template if available
+            description_template = schema.get("description_template")
+            if description_template and doc.get("fields"):
+                doc["generated_description"] = render_description_template(
+                    description_template,
+                    doc.get("fields", {})
+                )
 
     serialized = serialize_mongo_doc(doc)
     serialized = attach_presigned_urls(serialized)
