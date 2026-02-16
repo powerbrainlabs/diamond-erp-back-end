@@ -46,6 +46,7 @@ class FieldDefinition(BaseModel):
     display_order: int = 0
     help_text: Optional[str] = None
     conditional_logic: Optional[ConditionalLogic] = None
+    unit: Optional[str] = None  # display unit e.g. "gms", "cts", "mm"
     sub_fields: Optional[List[CompositeSubField]] = None  # for composite field type
 
 

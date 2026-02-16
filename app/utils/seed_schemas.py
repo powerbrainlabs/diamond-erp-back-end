@@ -380,20 +380,22 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Gross Weight (gms)",
+            "label": "Gross Weight",
             "field_name": "gross_weight",
             "field_type": "text",
             "is_required": False,
             "placeholder": "Enter gross weight in gms",
+            "unit": "gms",
             "display_order": 6,
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Diamond Weight (cts)",
+            "label": "Diamond Weight",
             "field_name": "diamond_weight",
             "field_type": "text",
             "is_required": False,
             "placeholder": "Enter diamond weight in cts",
+            "unit": "cts",
             "display_order": 7,
         },
         {
@@ -436,11 +438,12 @@ async def seed_default_category_schemas(db):
     loose_diamond_fields = [
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Dimension (mm)",
+            "label": "Dimension",
             "field_name": "dimension",
             "field_type": "composite",
             "is_required": False,
             "help_text": "Enter length x width x height in millimeters",
+            "unit": "mm",
             "sub_fields": [
                 {
                     "field_name": "length",
@@ -485,6 +488,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Mohs hardness scale",
+            "unit": "(Mohs Scale)",
             "display_order": 2,
         },
         {
@@ -507,11 +511,12 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Weight (cts)",
+            "label": "Weight",
             "field_name": "weight",
             "field_type": "text",
             "is_required": False,
             "placeholder": "Weight in carats",
+            "unit": "cts",
             "display_order": 5,
         },
         {
@@ -581,11 +586,12 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Dimension (mm)",
+            "label": "Dimension",
             "field_name": "dimension",
             "field_type": "composite",
             "is_required": False,
             "help_text": "Enter length x width x height in millimeters",
+            "unit": "mm",
             "sub_fields": [
                 {
                     "field_name": "length",
@@ -625,11 +631,12 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Weight (cts)",
+            "label": "Weight",
             "field_name": "weight",
             "field_type": "text",
             "is_required": False,
             "placeholder": "Weight in carats",
+            "unit": "cts",
             "display_order": 3,
         },
         {
@@ -648,6 +655,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Mohs hardness",
+            "unit": "(Mohs Scale)",
             "display_order": 5,
         },
         {
@@ -767,6 +775,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Mohs hardness",
+            "unit": "(Mohs Scale)",
             "display_order": 5,
         },
         {
@@ -789,20 +798,22 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Stone Weight (cts)",
+            "label": "Stone Weight",
             "field_name": "stone_weight",
             "field_type": "text",
             "is_required": False,
             "placeholder": "Gemstone weight in carats",
+            "unit": "cts",
             "display_order": 8,
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Gross Weight (gms)",
+            "label": "Gross Weight",
             "field_name": "gross_weight",
             "field_type": "text",
             "is_required": False,
             "placeholder": "Total weight in grams",
+            "unit": "gms",
             "display_order": 9,
         },
         {
@@ -922,6 +933,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Mohs hardness",
+            "unit": "(Mohs Scale)",
             "display_order": 7,
         },
         {
@@ -949,6 +961,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Primary gemstone weight",
+            "unit": "cts",
             "display_order": 10,
         },
         {
@@ -958,15 +971,17 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Secondary gemstone weight",
+            "unit": "cts",
             "display_order": 11,
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Gross Weight (gms)",
+            "label": "Gross Weight",
             "field_name": "gross_weight",
             "field_type": "text",
             "is_required": False,
             "placeholder": "Total weight in grams",
+            "unit": "gms",
             "display_order": 12,
         },
         {
@@ -1054,20 +1069,22 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Gross Weight (gms)",
+            "label": "Gross Weight",
             "field_name": "gross_weight",
             "field_type": "text",
             "is_required": False,
             "placeholder": "Total weight in grams",
+            "unit": "gms",
             "display_order": 5,
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Diamond Weight (cts)",
+            "label": "Diamond Weight",
             "field_name": "diamond_weight",
             "field_type": "text",
             "is_required": False,
             "placeholder": "Diamond weight in carats",
+            "unit": "cts",
             "display_order": 6,
         },
         {
