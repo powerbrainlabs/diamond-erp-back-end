@@ -5,7 +5,7 @@ from typing import Optional, List, Literal, Any
 FieldType = Literal[
     "text", "textarea", "number", "dropdown",
     "checkbox", "radio", "date", "file",
-    "creatable_select", "composite",
+    "creatable_select", "composite", "custom",
 ]
 
 
