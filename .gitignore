@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
 # C extensions
 *.so
@@ -55,6 +56,7 @@ coverage.xml
 .venv
 env/
 venv/
+/venv
 ENV/
 env.bak/
 venv.bak/
@@ -64,6 +66,8 @@ venv.bak/
 .vscode/
 *.swp
 *.swo
+.idea
+.vscode
 
 # macOS
 .DS_Store
@@ -77,3 +81,4 @@ venv.bak/
 
 # MinIO data
 minio_data/
+
