@@ -516,7 +516,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Specific Gravity (SG)",
+            "label": "SG",
             "field_name": "sg",
             "field_type": "text",
             "is_required": False,
@@ -525,7 +525,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Microscopic Observation",
+            "label": "Microscopic Obs",
             "field_name": "microscopic_obs",
             "field_type": "creatable_select",
             "is_required": False,
@@ -652,7 +652,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Specific Gravity (SG)",
+            "label": "SG",
             "field_name": "sg",
             "field_type": "text",
             "is_required": False,
@@ -661,7 +661,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Refractive Index (RI)",
+            "label": "RI",
             "field_name": "ri",
             "field_type": "text",
             "is_required": False,
@@ -670,7 +670,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Microscopic Observation",
+            "label": "Microscopic Obs",
             "field_name": "microscopic_obs",
             "field_type": "creatable_select",
             "is_required": False,
@@ -771,7 +771,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Specific Gravity (SG)",
+            "label": "SG",
             "field_name": "sg",
             "field_type": "text",
             "is_required": False,
@@ -780,7 +780,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Refractive Index (RI)",
+            "label": "RI",
             "field_name": "ri",
             "field_type": "text",
             "is_required": False,
@@ -807,7 +807,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Microscopic Observation",
+            "label": "Microscopic Obs",
             "field_name": "microscopic_obs",
             "field_type": "creatable_select",
             "is_required": False,
@@ -926,7 +926,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Specific Gravity (SG)",
+            "label": "SG",
             "field_name": "sg",
             "field_type": "text",
             "is_required": False,
@@ -935,7 +935,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Refractive Index (RI)",
+            "label": "RI",
             "field_name": "ri",
             "field_type": "text",
             "is_required": False,
@@ -944,7 +944,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Primary Stone Weight (cts)",
+            "label": "Primary Stone Wt",
             "field_name": "primary_stone_weight",
             "field_type": "text",
             "is_required": False,
@@ -953,7 +953,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Secondary Stone Weight (cts)",
+            "label": "Secondary Stone Wt",
             "field_name": "secondary_stone_weight",
             "field_type": "text",
             "is_required": False,
@@ -971,7 +971,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Microscopic Observation",
+            "label": "Microscopic Obs",
             "field_name": "microscopic_obs",
             "field_type": "creatable_select",
             "is_required": False,
