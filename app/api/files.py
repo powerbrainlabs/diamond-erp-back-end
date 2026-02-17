@@ -5,10 +5,65 @@ from fastapi.responses import StreamingResponse
 from datetime import datetime
 import uuid
 import httpx
+import logging
 
 from app.utils.minio_helpers import get_presigned_url
 from ..core.minio_client import minio_client
 from ..core.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Default values for background removal API
+REMBG_API_URL = "https://begon.webeazzy.com/api/process-image"
+REMBG_API_KEY = "sk-jBqRqnHAD5JECKpUP8NklxUTmns6d1M57ZoXgI0DW3M"
+
+
+async def _remove_bg_api(image_data: bytes, filename: str) -> bytes:
+    """
+    Call Webeazzy RemBG API to remove background.
+
+    API Endpoint: https://begon.webeazzy.com/api/process-image
+    Auth: X-API-Key header
+    """
+    api_key = settings.REMBG_API_KEY or REMBG_API_KEY
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                settings.REMBG_API_URL or REMBG_API_URL,
+                headers={
+                    "X-API-Key": api_key
+                },
+                files={
+                    "file": (filename, image_data)
+                }
+            )
+
+        if response.status_code == 200:
+            logger.info(f"Background removed via RemBG API: {filename}")
+            return response.content
+        elif response.status_code == 401 or response.status_code == 403:
+            raise RuntimeError(
+                f"RemBG API: Authentication failed (status {response.status_code})"
+            )
+        elif response.status_code == 429:
+            raise RuntimeError(
+                "RemBG API: Rate limit exceeded. Please try again later."
+            )
+        else:
+            detail = response.text[:200] if response.text else "Unknown error"
+            raise RuntimeError(
+                f"RemBG API failed: {response.status_code} - {detail}"
+            )
+
+    except httpx.TimeoutException:
+        raise RuntimeError("RemBG API: Request timed out (120 seconds)")
+    except httpx.ConnectError:
+        raise RuntimeError("RemBG API: Could not connect to server")
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"RemBG API error: {str(e)}")
 
 router = APIRouter(prefix="/api/files", tags=["Files"])
 
@@ -33,7 +88,7 @@ async def upload_temp_file(files: List[UploadFile] = File(...)):
                 object_name=file_id,
                 data=file_stream,
                 length=len(file_bytes),
-                content_type=file.content_type
+                content_type=file.content_type or "application/octet-stream"
             )
 
             # Verify the file was uploaded successfully
@@ -102,43 +157,27 @@ async def verify_temp_file(file_id: str):
 @router.post("/remove-background")
 async def remove_background(image: UploadFile = File(...)):
     """
-    Remove background from an image using the rembg.webeazzy.com API.
+    Remove background from an image using the begon.webeazzy.com API.
     Returns the processed image with transparent background.
     """
     try:
         # Read the uploaded file
         file_bytes = await image.read()
         
-        # Prepare the request to the external API
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            files = {"file": (image.filename, file_bytes, image.content_type)}
-            headers = {"X-API-Key": settings.REMBG_API_KEY}
+        # Call the background removal API
+        filename = image.filename or "image.png"
+        processed_image = await _remove_bg_api(file_bytes, filename)
+        
+        # Return the processed image
+        return StreamingResponse(
+            io.BytesIO(processed_image),
+            media_type="image/png",
+            headers={
+                "Content-Disposition": f"attachment; filename=nobg_{filename}"
+            }
+        )
             
-            # Call the external background removal API
-            response = await client.post(
-                settings.REMBG_API_URL,
-                files=files,
-                headers=headers
-            )
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Background removal API returned error: {response.text}"
-                )
-            
-            # Return the processed image
-            return StreamingResponse(
-                io.BytesIO(response.content),
-                media_type="image/png",
-                headers={
-                    "Content-Disposition": f"attachment; filename=nobg_{image.filename}"
-                }
-            )
-            
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Background removal API timeout")
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=500, detail=f"HTTP error occurred: {str(e)}")
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Background removal failed: {str(e)}")

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     MINIO_USE_TLS: bool = False
 
     # Background Removal API
-    REMBG_API_URL: str = "https://rembg.webeazzy.com/api/process-image"
+    REMBG_API_URL: str = "https://begon.webeazzy.com/api/process-image"
     REMBG_API_KEY: str
 
 
