@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from typing import List
 
@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     SUPER_ADMIN_PASSWORD: str = "SuperAdmin@123"
     SUPER_ADMIN_NAME: str = "Super Administrator"
 
+
     # Admin seed
     ADMIN_EMAIL: str = "admin@diamonderp.com"
     ADMIN_PASSWORD: str = "Admin@123"
@@ -44,10 +45,7 @@ class Settings(BaseSettings):
     REMBG_API_URL: str = "https://begon.webeazzy.com/api/process-image"
     REMBG_API_KEY: str
 
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = SettingsConfigDict(env_file=(".env", ".env.local"), extra="ignore")
 
 
     @property
