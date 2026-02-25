@@ -120,6 +120,25 @@ async def upload_temp_file(files: List[UploadFile] = File(...)):
 
 
 # /api/files/presigned/<bucket>/<file_id>
+@router.get("/proxy/{bucket}/{file_id:path}")
+async def proxy_file(bucket: str, file_id: str):
+    """
+    Proxy endpoint for serving files from MinIO.
+    Used by the frontend to display images without exposing direct MinIO URLs.
+    """
+    try:
+        response = minio_client.get_object(bucket, file_id)
+        file_data = response.read()
+        content_type = response.headers.get("content-type", "application/octet-stream")
+        return StreamingResponse(
+            io.BytesIO(file_data),
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"File not found: {str(e)}")
+
+
 @router.get("/presigned/{bucket}/{file_id}")
 async def get_presigned_file(bucket: str, file_id: str):
     try:
