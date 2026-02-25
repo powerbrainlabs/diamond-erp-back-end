@@ -6,12 +6,73 @@ from datetime import datetime
 import uuid
 import httpx
 import logging
+from PIL import Image
 
 from app.utils.minio_helpers import get_presigned_url
 from ..core.minio_client import minio_client
 from ..core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def compress_image(image_bytes: bytes, filename: str, max_width: int = 1200, quality: int = 75) -> tuple[bytes, str]:
+    """
+    Compress image to reduce file size while maintaining reasonable quality.
+
+    Args:
+        image_bytes: Raw image bytes
+        filename: Original filename to preserve extension
+        max_width: Maximum width in pixels (aspect ratio preserved)
+        quality: JPEG/WebP quality (1-100, default 75 for good balance)
+
+    Returns:
+        Tuple of (compressed_bytes, content_type)
+    """
+    try:
+        # Open image from bytes
+        img = Image.open(io.BytesIO(image_bytes))
+
+        # Convert RGBA to RGB if needed (for JPEG compatibility)
+        if img.mode in ('RGBA', 'LA', 'P'):
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+            img = background
+
+        # Resize if width exceeds max_width (preserve aspect ratio)
+        if img.width > max_width:
+            ratio = max_width / img.width
+            new_height = int(img.height * ratio)
+            img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+
+        # Save compressed image
+        output = io.BytesIO()
+
+        # Determine output format
+        filename_lower = filename.lower()
+        if filename_lower.endswith('.png'):
+            img.save(output, format='PNG', optimize=True)
+            content_type = 'image/png'
+        elif filename_lower.endswith('.webp'):
+            img.save(output, format='WEBP', quality=quality)
+            content_type = 'image/webp'
+        else:  # Default to JPEG for jpg, jpeg, and unknown formats
+            img.save(output, format='JPEG', quality=quality, optimize=True)
+            content_type = 'image/jpeg'
+
+        compressed_bytes = output.getvalue()
+        original_size = len(image_bytes)
+        compressed_size = len(compressed_bytes)
+        ratio = (1 - compressed_size / original_size) * 100 if original_size > 0 else 0
+
+        logger.info(f"📦 Image compressed: {filename} | {original_size:,} → {compressed_size:,} bytes ({ratio:.1f}% reduction)")
+
+        return compressed_bytes, content_type
+
+    except Exception as e:
+        logger.warning(f"⚠️ Image compression failed for {filename}: {str(e)}, uploading original")
+        # Return original bytes if compression fails
+        return image_bytes, "application/octet-stream"
+
 
 # Default values for background removal API
 REMBG_API_URL = "https://begon.webeazzy.com/api/process-image"
@@ -71,6 +132,7 @@ router = APIRouter(prefix="/api/files", tags=["Files"])
 async def upload_temp_file(files: List[UploadFile] = File(...)):
     """
     Upload one or multiple files to temporary MinIO bucket (cert-temp).
+    Automatically compresses images to optimize storage and loading times.
     Returns an array of uploaded file details with their temp file IDs.
     """
     uploaded = []
@@ -79,8 +141,14 @@ async def upload_temp_file(files: List[UploadFile] = File(...)):
         try:
             file_id = f"{uuid.uuid4()}_{file.filename}"
 
-            # Read bytes into memory (MinIO requires length)
+            # Read bytes into memory
             file_bytes = await file.read()
+            content_type = file.content_type or "application/octet-stream"
+
+            # Compress images (JPEG, PNG, WebP, etc.)
+            if content_type.startswith('image/'):
+                file_bytes, content_type = compress_image(file_bytes, file.filename)
+
             file_stream = io.BytesIO(file_bytes)
 
             minio_client.put_object(
@@ -88,7 +156,7 @@ async def upload_temp_file(files: List[UploadFile] = File(...)):
                 object_name=file_id,
                 data=file_stream,
                 length=len(file_bytes),
-                content_type=file.content_type or "application/octet-stream"
+                content_type=content_type
             )
 
             # Verify the file was uploaded successfully
@@ -104,11 +172,11 @@ async def upload_temp_file(files: List[UploadFile] = File(...)):
                 "file_id": file_id,
                 "bucket": "cert-temp",
                 "filename": file.filename,
-                "content_type": file.content_type,
+                "content_type": content_type,
                 "uploaded_at": datetime.utcnow().isoformat()
             })
 
-            print(f"✅ Successfully uploaded file: {file_id} to cert-temp bucket")
+            logger.info(f"✅ Successfully uploaded file: {file_id} to cert-temp bucket")
 
         except HTTPException:
             raise
@@ -190,16 +258,28 @@ async def verify_temp_file(file_id: str):
 async def remove_background(image: UploadFile = File(...)):
     """
     Remove background from an image using the begon.webeazzy.com API.
-    Returns the processed image with transparent background.
+    Returns the processed image with transparent background (optimized/compressed).
     """
     try:
         # Read the uploaded file
         file_bytes = await image.read()
-        
+
         # Call the background removal API
         filename = image.filename or "image.png"
         processed_image = await _remove_bg_api(file_bytes, filename)
-        
+
+        # Compress the output image to reduce file size
+        # For PNG with transparency, we still optimize it
+        try:
+            img = Image.open(io.BytesIO(processed_image))
+            output = io.BytesIO()
+            # Save with optimization for PNG (maintains transparency)
+            img.save(output, format='PNG', optimize=True)
+            processed_image = output.getvalue()
+            logger.info(f"📦 Background-removed image optimized: {len(file_bytes):,} → {len(processed_image):,} bytes")
+        except Exception as compress_error:
+            logger.warning(f"⚠️ PNG optimization failed: {str(compress_error)}, returning original")
+
         # Return the processed image
         return StreamingResponse(
             io.BytesIO(processed_image),
@@ -208,7 +288,7 @@ async def remove_background(image: UploadFile = File(...)):
                 "Content-Disposition": f"attachment; filename=nobg_{filename}"
             }
         )
-            
+
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
