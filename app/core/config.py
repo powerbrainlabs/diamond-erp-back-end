@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://staging.gac.powerbrainlabs.com,http://146.148.68.124:3000"
 
+    # Backend URL for image proxy and file serving
+    BACKEND_URL: str = "https://backend-sta.gac.powerbrainlabs.com"
 
     # Super Admin seed
     SUPER_ADMIN_EMAIL: str = "superadmin@diamonderp.com"

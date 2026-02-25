@@ -130,10 +130,23 @@ async def proxy_file(bucket: str, file_id: str):
         response = minio_client.get_object(bucket, file_id)
         file_data = response.read()
         content_type = response.headers.get("content-type", "application/octet-stream")
+
+        # Build headers, including cache-related headers from MinIO
+        headers = {
+            "Cache-Control": "public, max-age=86400",
+            "Accept-Ranges": "bytes",
+        }
+
+        # Pass through ETag and Last-Modified if available
+        if "etag" in response.headers:
+            headers["ETag"] = response.headers["etag"]
+        if "last-modified" in response.headers:
+            headers["Last-Modified"] = response.headers["last-modified"]
+
         return StreamingResponse(
             io.BytesIO(file_data),
             media_type=content_type,
-            headers={"Cache-Control": "public, max-age=86400"},
+            headers=headers,
         )
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"File not found: {str(e)}")
