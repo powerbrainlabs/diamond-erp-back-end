@@ -8,6 +8,7 @@ from .core.minio_client import ensure_buckets
 from .api.auth import router as auth_router
 from .api.jobs import router as jobs_router
 from .api.clients import router as client_router
+from .api.manufacturers import router as manufacturers_router
 from .api.files import router as files_router
 from .api.certification import router as certification_router
 from .api.categories import router as category_router
@@ -17,9 +18,11 @@ from .api.action_history import router as action_history_router
 from .api.super_admin_categories import router as super_admin_categories_router
 from .api.certificate_types import router as certificate_types_router
 from .api.dynamic_categories import router as dynamic_categories_router
-from .api.manufacturers import router as manufacturers_router
+from .api.staff import router as staff_router
+from .api.search import router as search_router
 
 from .core.security import hash_password
+from .core.minio_client import ensure_buckets
 
 app = FastAPI(title=settings.APP_NAME)
 
@@ -33,6 +36,10 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
+    # Initialize MinIO buckets
+    ensure_buckets()
+    
+    # Initialize database
     db = await init_db()
 
     # Migration: rename legacy "staff" role to "user"
@@ -78,23 +85,24 @@ async def startup_event():
     from .utils.seed_schemas import seed_default_category_schemas
     await seed_default_category_schemas(db)
 
-    # Ensure MinIO buckets exist
-    ensure_buckets()
-
 # Routers
 app.include_router(auth_router)
 app.include_router(jobs_router)
 app.include_router(client_router)
+app.include_router(manufacturers_router)
 app.include_router(files_router)
 app.include_router(certification_router)
 app.include_router(category_router)
 app.include_router(qc_reports_router)
-app.include_router(dashboard_router)
+
+app.include_router(staff_router)
 app.include_router(action_history_router)
+app.include_router(dashboard_router)
+app.include_router(search_router)
 app.include_router(super_admin_categories_router)
 app.include_router(certificate_types_router)
 app.include_router(dynamic_categories_router)
-app.include_router(manufacturers_router)
+
 
 @app.get("/")
 async def root():

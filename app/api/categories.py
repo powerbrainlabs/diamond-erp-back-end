@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, Literal
 from datetime import datetime
+from bson import ObjectId
 import uuid
 
 from ..core.dependencies import require_admin, require_staff
@@ -224,13 +225,7 @@ async def get_categories_by_type(stone_type: str, current_user: dict = Depends(r
             {"group": stone_type, "type": group, "is_deleted": False}
         ).to_list(None)
         result[group] = [
-            {
-                "id": str(doc.get("_id")),
-                "name": doc.get("name"),
-                "value": doc.get("value"),
-                "extra": doc.get("extra"),
-            }
-            for doc in docs
+            serialize_attribute(doc) for doc in docs
         ]
 
     return {
@@ -241,6 +236,16 @@ async def get_categories_by_type(stone_type: str, current_user: dict = Depends(r
 
 # Utility Serializer
 def serialize_attribute(doc):
+    if not doc:
+        return None
+    
+    # Serialize created_by to handle ObjectId in user_id
+    created_by = doc.get("created_by", {})
+    if created_by and isinstance(created_by, dict):
+        created_by = created_by.copy()
+        if isinstance(created_by.get("user_id"), ObjectId):
+            created_by["user_id"] = str(created_by["user_id"])
+    
     return {
         "id": str(doc.get("uuid")),
         "group": doc.get("group"),
@@ -249,7 +254,7 @@ def serialize_attribute(doc):
         "hardness": doc.get("hardness"),
         "ri": doc.get("ri"),
         "sg": doc.get("sg"),
-        "created_by": doc.get("created_by"),
-        "created_at": doc.get("created_at"),
-        "updated_at": doc.get("updated_at"),
+        "created_by": created_by,
+        "created_at": doc.get("created_at").isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at"),
+        "updated_at": doc.get("updated_at").isoformat() if isinstance(doc.get("updated_at"), datetime) else doc.get("updated_at"),
     }

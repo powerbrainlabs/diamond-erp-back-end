@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from typing import List
 
@@ -21,13 +21,16 @@ class Settings(BaseSettings):
 
 
     # CORS
-    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://staging.gac.powerbrainlabs.com,http://146.148.68.124:3000"
 
+    # Backend URL for image proxy and file serving
+    BACKEND_URL: str = "https://backend-sta.gac.powerbrainlabs.com"
 
     # Super Admin seed
     SUPER_ADMIN_EMAIL: str = "superadmin@diamonderp.com"
     SUPER_ADMIN_PASSWORD: str = "SuperAdmin@123"
     SUPER_ADMIN_NAME: str = "Super Administrator"
+
 
     # Admin seed
     ADMIN_EMAIL: str = "admin@diamonderp.com"
@@ -41,13 +44,10 @@ class Settings(BaseSettings):
     MINIO_USE_TLS: bool = False
 
     # Background Removal API
-    REMBG_API_URL: str = "https://rembg.webeazzy.com/api/process-image"
+    REMBG_API_URL: str = "https://begon.webeazzy.com/api/process-image"
     REMBG_API_KEY: str
 
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = SettingsConfigDict(env_file=(".env", ".env.local"), extra="ignore")
 
 
     @property

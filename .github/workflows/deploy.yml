@@ -1,0 +1,61 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Debug Connectivity
+        run: |
+          echo "Testing connection to ${{ secrets.GAC_DEPLOY_HOST }} on port ${{ secrets.GAC_DEPLOY_PORT || 22 }}..."
+          # Use timeout to avoid hanging if the port is completely blocked
+          timeout 10s bash -c "cat < /dev/tcp/${{ secrets.GAC_DEPLOY_HOST }}/${{ secrets.GAC_DEPLOY_PORT || 22 }}" && echo "Port is open" || echo "Connection failed or timed out"
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.GAC_DEPLOY_HOST }}
+          username: ${{ secrets.GAC_DEPLOY_USER }}
+          key: ${{ secrets.GAC_DEPLOY_SSH_KEY }}
+          port: ${{ secrets.GAC_DEPLOY_PORT || 22 }}
+          script: |
+            export PATH="$HOME/.local/bin:$PATH"
+            cd /home/powerbrainlabs/projects/diamond-erp/diamond-erp-back-end
+            
+            # Pull latest code
+            git pull origin main
+            
+            # Rebuild and restart backend container
+            docker-compose down backend || true
+            docker-compose build --no-cache backend
+            docker-compose up -d backend
+            
+            # Clean up old images
+            docker image prune -f
+            
+            echo "Backend deployment completed successfully!"
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.GAC_DEPLOY_HOST }}
+          username: ${{ secrets.GAC_DEPLOY_USER }}
+          key: ${{ secrets.GAC_DEPLOY_SSH_KEY }}
+          port: ${{ secrets.GAC_DEPLOY_PORT || 22 }}
+          script: |
+            sleep 5
+            docker ps | grep diamond-erp-backend
+            # Check if backend is responding (root endpoint returns {"status": "ok"})
+            response=$(curl -s http://localhost:8000/)
+            echo "$response" | grep -q "status" || exit 1
+            echo "Backend health check passed!"
+
