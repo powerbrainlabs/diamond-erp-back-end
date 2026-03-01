@@ -255,7 +255,8 @@ def generate_jobs_pdf(jobs_data: List[dict], logo_path: str) -> io.BytesIO:
     width, height = A4
     
     # Grid settings
-    margin_left = 10 * mm
+    # Center the 2-column grid: (A4_width - 2*card_width - gap_x) / 2
+    margin_left = (width - 2 * 90 * mm - 10 * mm) / 2
     margin_top = 10 * mm
     card_width = 90 * mm
     card_height = 55 * mm
