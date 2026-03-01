@@ -10,7 +10,10 @@ minio_client = Minio(
 
 # Ensure buckets exist at startup
 def ensure_buckets():
-    for bucket in ["cert-temp", "certificates"]:
-        if not minio_client.bucket_exists(bucket):
-            minio_client.make_bucket(bucket)
-
+    try:
+        for bucket in ["cert-temp", "certificates"]:
+            if not minio_client.bucket_exists(bucket):
+                minio_client.make_bucket(bucket)
+        print("✅ MinIO buckets ready.")
+    except Exception as e:
+        print(f"⚠️  WARNING: MinIO not available ({e}). File upload features will be disabled until MinIO is started.")

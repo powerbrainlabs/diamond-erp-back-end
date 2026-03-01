@@ -229,6 +229,26 @@ async def get_presigned_file(bucket: str, file_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/download/{bucket}/{file_id:path}")
+async def download_file(bucket: str, file_id: str):
+    """
+    Stream a file directly from MinIO. Used by frontend for PDF generation
+    to avoid CORS issues with presigned URLs.
+    """
+    try:
+        response = minio_client.get_object(bucket, file_id)
+        stat = minio_client.stat_object(bucket, file_id)
+        content_type = stat.content_type or "application/octet-stream"
+
+        return StreamingResponse(
+            response,
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"File not found: {str(e)}")
+
+
 @router.get("/verify-temp/{file_id}")
 async def verify_temp_file(file_id: str):
     """
