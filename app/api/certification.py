@@ -137,6 +137,8 @@ async def create_certification(
         "brand_logo_url": logo_url,
         "rear_brand_logo_url": rear_logo_url,
         "is_deleted": False,
+        "is_published": False,
+        "published_at": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -185,6 +187,8 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
                 "brand_logo_url": logo_url,
                 "rear_brand_logo_url": rear_logo_url,
                 "is_deleted": False,
+                "is_published": False,
+                "published_at": None,
                 "created_at": now,
                 "updated_at": now
             })
@@ -239,10 +243,32 @@ def attach_presigned_urls(doc):
     return doc
 
 
+class BulkPublishPayload(BaseModel):
+    uuids: List[str]
+
+
+@router.patch("/publish")
+async def bulk_publish_certifications(payload: BulkPublishPayload):
+    """
+    Bulk publish certificates by UUID list.
+    Sets is_published=True and published_at=now on matching certs.
+    """
+    if not payload.uuids:
+        raise HTTPException(status_code=400, detail="No UUIDs provided")
+    db = await get_db()
+    now = datetime.utcnow()
+    result = await db.certifications.update_many(
+        {"uuid": {"$in": payload.uuids}, "is_deleted": False},
+        {"$set": {"is_published": True, "published_at": now, "updated_at": now}},
+    )
+    return {"detail": f"{result.modified_count} certificate(s) published"}
+
+
 @router.get("")
 async def list_certifications(
     search: Optional[str] = None,
     type: Optional[str] = None,
+    published: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
     sort_by: str = "created_at",
@@ -251,9 +277,16 @@ async def list_certifications(
     """
     Fetch paginated certifications with filters,
     now with presigned URLs included.
+    published param: "true" = only published, "false" = only drafts, "all" = everything
     """
     db = await get_db()
     filt = {"is_deleted": False}
+
+    # Filter by published state
+    if published == "true":
+        filt["is_published"] = True
+    elif published == "false":
+        filt["is_published"] = {"$ne": True}
 
     # Filter by certificate type
     if type:
