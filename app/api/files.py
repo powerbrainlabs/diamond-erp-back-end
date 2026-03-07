@@ -74,24 +74,17 @@ def compress_image(image_bytes: bytes, filename: str, max_width: int = 1200, qua
         return image_bytes, "application/octet-stream"
 
 
-# Default values for background removal API
-REMBG_API_URL = "https://begon.webeazzy.com/api/process-image"
-REMBG_API_KEY = "sk-jBqRqnHAD5JECKpUP8NklxUTmns6d1M57ZoXgI0DW3M"
-
-
 async def _remove_bg_api(image_data: bytes, filename: str) -> bytes:
     """
     Call Webeazzy RemBG API to remove background.
-
-    API Endpoint: https://begon.webeazzy.com/api/process-image
     Auth: X-API-Key header
     """
-    api_key = settings.REMBG_API_KEY or REMBG_API_KEY
+    api_key = settings.REMBG_API_KEY
 
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
-                settings.REMBG_API_URL or REMBG_API_URL,
+                settings.REMBG_API_URL,
                 headers={
                     "X-API-Key": api_key
                 },

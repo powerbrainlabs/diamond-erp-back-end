@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://staging.gac.powerbrainlabs.com,http://146.148.68.124:3000"
 
     # Backend URL for image proxy and file serving
-    BACKEND_URL: str = "https://backend-sta.gac.powerbrainlabs.com"
+    BACKEND_URL: str = "http://localhost:8002"
 
     # Super Admin seed
     SUPER_ADMIN_EMAIL: str = "superadmin@diamonderp.com"
@@ -44,10 +44,10 @@ class Settings(BaseSettings):
     MINIO_USE_TLS: bool = False
 
     # Background Removal API
-    REMBG_API_URL: str = "https://begon.webeazzy.com/api/process-image"
+    REMBG_API_URL: str
     REMBG_API_KEY: str
 
-    model_config = SettingsConfigDict(env_file=(".env", ".env.local"), extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
     @property
