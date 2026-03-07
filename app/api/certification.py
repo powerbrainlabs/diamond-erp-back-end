@@ -389,13 +389,22 @@ async def get_form_schema(category_uuid: str):
                 "type": field_type_key,
                 "is_deleted": False
             }).sort([("name", 1)])
-            
-            # Extract option names
-            options = [doc.get("name") async for doc in cursor]
-            
+
+            attrs = [doc async for doc in cursor]
+            options = [doc.get("name") for doc in attrs]
+
             # If we found attributes, use them; otherwise keep the schema's default options
             if options:
                 enriched_field["options"] = options
+                # Include extra properties (hardness, ri, sg) if any attribute has them
+                extra_props = ["hardness", "ri", "sg"]
+                metadata = {
+                    a["name"]: {k: a[k] for k in extra_props if a.get(k) is not None}
+                    for a in attrs
+                    if any(a.get(k) is not None for k in extra_props)
+                }
+                if metadata:
+                    enriched_field["attribute_metadata"] = metadata
         
         enriched_fields.append(enriched_field)
     
