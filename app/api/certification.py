@@ -243,6 +243,57 @@ def attach_presigned_urls(doc):
     return doc
 
 
+class CertificationUpdate(BaseModel):
+    client_id: Optional[str] = None
+    fields: Optional[Dict[str, Any]] = None
+    photo_file_id: Optional[str] = None
+    logo_file_id: Optional[str] = None
+    rear_logo_file_id: Optional[str] = None
+    remove_photo: bool = False
+    remove_logo: bool = False
+    remove_rear_logo: bool = False
+
+
+@router.put("/{cert_uuid}")
+async def update_certification(cert_uuid: str, payload: CertificationUpdate):
+    db = await get_db()
+    doc = await db.certifications.find_one({"uuid": cert_uuid, "is_deleted": False})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    updates: Dict[str, Any] = {"updated_at": datetime.utcnow()}
+
+    if payload.client_id is not None:
+        client = await db.clients.find_one({"uuid": payload.client_id, "is_deleted": False})
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
+        updates["client_id"] = payload.client_id
+
+    if payload.fields is not None:
+        updates["fields"] = payload.fields
+
+    # Photo
+    if payload.remove_photo:
+        updates["photo_url"] = None
+    elif payload.photo_file_id:
+        updates["photo_url"] = promote_file_from_temp(payload.photo_file_id)
+
+    # Logo
+    if payload.remove_logo:
+        updates["brand_logo_url"] = None
+    elif payload.logo_file_id:
+        updates["brand_logo_url"] = promote_file_from_temp(payload.logo_file_id)
+
+    # Rear Logo
+    if payload.remove_rear_logo:
+        updates["rear_brand_logo_url"] = None
+    elif payload.rear_logo_file_id:
+        updates["rear_brand_logo_url"] = promote_file_from_temp(payload.rear_logo_file_id)
+
+    await db.certifications.update_one({"uuid": cert_uuid}, {"$set": updates})
+    return {"detail": "Certificate updated"}
+
+
 class BulkPublishPayload(BaseModel):
     uuids: List[str]
 
