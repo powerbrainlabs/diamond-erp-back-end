@@ -11,7 +11,7 @@ minio_client = Minio(
 # Ensure buckets exist at startup
 def ensure_buckets():
     try:
-        for bucket in ["cert-temp", "certificates"]:
+        for bucket in ["cert-temp", "certificates", "job-photos"]:
             if not minio_client.bucket_exists(bucket):
                 minio_client.make_bucket(bucket)
         print("✅ MinIO buckets ready.")

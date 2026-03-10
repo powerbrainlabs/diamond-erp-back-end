@@ -20,6 +20,7 @@ from .api.certificate_types import router as certificate_types_router
 from .api.dynamic_categories import router as dynamic_categories_router
 from .api.staff import router as staff_router
 from .api.search import router as search_router
+from .api.photos import router as photos_router
 
 from .core.security import hash_password
 from .core.minio_client import ensure_buckets
@@ -102,6 +103,7 @@ app.include_router(search_router)
 app.include_router(super_admin_categories_router)
 app.include_router(certificate_types_router)
 app.include_router(dynamic_categories_router)
+app.include_router(photos_router)
 
 
 @app.get("/")
