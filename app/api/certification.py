@@ -60,6 +60,7 @@ class CertificationCreate(BaseModel):
     photo_file_id: Optional[str] = None
     logo_file_id: Optional[str] = None
     rear_logo_file_id: Optional[str] = None
+    gallery_photo_uuid: Optional[str] = None  # uuid of a job_photos document
 
 
 @router.post("", status_code=201)
@@ -96,7 +97,18 @@ async def create_certification(
     rear_logo_url = None
 
     try:
-        if payload.photo_file_id:
+        if payload.gallery_photo_uuid:
+            # Use a photo from the job-photos gallery — copy to certificates bucket
+            gallery_doc = await db.job_photos.find_one({"uuid": payload.gallery_photo_uuid, "is_deleted": False})
+            if not gallery_doc:
+                raise HTTPException(status_code=404, detail="Gallery photo not found")
+            src_file_id = gallery_doc["file_id"]
+            dest_file_id = f"{uuid.uuid4()}_{src_file_id}"
+            source = CopySource("job-photos", src_file_id)
+            minio_client.copy_object("certificates", dest_file_id, source)
+            photo_url = f"certificates/{dest_file_id}"
+            print(f"✅ Gallery photo copied to: {photo_url}")
+        elif payload.photo_file_id:
             print(f"🔄 Promoting photo file: {payload.photo_file_id}")
             photo_url = promote_file_from_temp(payload.photo_file_id)
             print(f"✅ Photo promoted to: {photo_url}")
@@ -144,6 +156,14 @@ async def create_certification(
     }
 
     await db.certifications.insert_one(doc)
+
+    # Track which gallery photo was used in this certificate
+    if payload.gallery_photo_uuid:
+        await db.job_photos.update_one(
+            {"uuid": payload.gallery_photo_uuid},
+            {"$addToSet": {"used_in_certificates": doc["uuid"]}},
+        )
+
     return {
         "detail": "Certification created",
         "uuid": doc["uuid"],
