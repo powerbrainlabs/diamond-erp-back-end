@@ -18,21 +18,31 @@ logger = logging.getLogger(__name__)
 def compress_image(image_bytes: bytes, filename: str, max_width: int = 1200, quality: int = 75) -> tuple[bytes, str]:
     """
     Compress image to reduce file size while maintaining reasonable quality.
+    PNG files with transparency are saved losslessly at full resolution.
 
     Args:
         image_bytes: Raw image bytes
         filename: Original filename to preserve extension
-        max_width: Maximum width in pixels (aspect ratio preserved)
+        max_width: Maximum width in pixels (aspect ratio preserved, ignored for PNG)
         quality: JPEG/WebP quality (1-100, default 75 for good balance)
 
     Returns:
         Tuple of (compressed_bytes, content_type)
     """
     try:
+        filename_lower = filename.lower()
+
+        # PNG files: preserve transparency and full resolution (no resize, no lossy compression)
+        if filename_lower.endswith('.png'):
+            img = Image.open(io.BytesIO(image_bytes))
+            output = io.BytesIO()
+            img.save(output, format='PNG', optimize=True)
+            return output.getvalue(), 'image/png'
+
         # Open image from bytes
         img = Image.open(io.BytesIO(image_bytes))
 
-        # Convert RGBA to RGB if needed (for JPEG compatibility)
+        # Convert RGBA to RGB for JPEG/WebP (paste on white)
         if img.mode in ('RGBA', 'LA', 'P'):
             background = Image.new('RGB', img.size, (255, 255, 255))
             background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
@@ -47,12 +57,7 @@ def compress_image(image_bytes: bytes, filename: str, max_width: int = 1200, qua
         # Save compressed image
         output = io.BytesIO()
 
-        # Determine output format
-        filename_lower = filename.lower()
-        if filename_lower.endswith('.png'):
-            img.save(output, format='PNG', optimize=True)
-            content_type = 'image/png'
-        elif filename_lower.endswith('.webp'):
+        if filename_lower.endswith('.webp'):
             img.save(output, format='WEBP', quality=quality)
             content_type = 'image/webp'
         else:  # Default to JPEG for jpg, jpeg, and unknown formats
