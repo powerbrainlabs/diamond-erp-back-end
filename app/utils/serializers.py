@@ -21,6 +21,8 @@ def dump_user(doc) -> dict:
         if k in d and isinstance(d[k], datetime):
             d[k] = d[k]
     d["permissions"] = get_permissions_for_role(d.get("role", ""))
+    if "features" not in d:
+        d["features"] = []
     return d
 
 def dump_job(doc) -> dict:

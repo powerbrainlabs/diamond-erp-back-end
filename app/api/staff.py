@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from datetime import datetime
 from bson import ObjectId
 
@@ -13,18 +13,26 @@ from fastapi import Request
 
 router = APIRouter(prefix="/api/staff", tags=["Staff"])
 
+AVAILABLE_FEATURES = [
+    "dashboard", "jobs", "contacts", "manage",
+    "photography", "certificates", "qc-reports",
+    "staff", "action-history",
+]
+
 class StaffCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     name: str = Field(min_length=2)
-    role: Literal["staff", "admin"] = "staff"
+    role: Literal["user", "admin"] = "user"
+    features: Optional[List[str]] = []
 
 class StaffUpdate(BaseModel):
     email: Optional[EmailStr] = None
     name: Optional[str] = Field(None, min_length=2)
     password: Optional[str] = Field(None, min_length=8)
-    role: Optional[Literal["staff", "admin"]] = None
+    role: Optional[Literal["user", "admin"]] = None
     is_active: Optional[bool] = None
+    features: Optional[List[str]] = None
 
 @router.post("", status_code=201)
 async def create_staff(
@@ -41,11 +49,14 @@ async def create_staff(
         raise HTTPException(status_code=409, detail="Email already exists")
     
     now = datetime.utcnow()
+    # Validate features
+    valid_features = [f for f in (payload.features or []) if f in AVAILABLE_FEATURES]
     doc = {
         "email": payload.email,
         "password": hash_password(payload.password),
         "name": payload.name,
         "role": payload.role,
+        "features": valid_features,
         "is_active": True,
         "created_at": now,
         "updated_at": now,
@@ -71,7 +82,7 @@ async def list_staff(
     """List all staff members and admins (admin only)"""
     db = await get_db()
     
-    query = {"role": {"$in": ["staff", "admin"]}}
+    query = {"role": {"$in": ["user", "admin"]}}
     
     if search:
         query["$or"] = [
@@ -110,7 +121,7 @@ async def get_staff(
     db = await get_db()
     
     try:
-        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["staff", "admin"]}})
+        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}})
     except:
         raise HTTPException(status_code=400, detail="Invalid staff ID")
     
@@ -130,7 +141,7 @@ async def update_staff(
     db = await get_db()
     
     try:
-        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["staff", "admin"]}})
+        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}})
     except:
         raise HTTPException(status_code=400, detail="Invalid staff ID")
     
@@ -155,6 +166,8 @@ async def update_staff(
         update_data["role"] = payload.role
     if payload.is_active is not None:
         update_data["is_active"] = payload.is_active
+    if payload.features is not None:
+        update_data["features"] = [f for f in payload.features if f in AVAILABLE_FEATURES]
     
     await db.users.update_one(
         {"_id": ObjectId(staff_id)},
@@ -174,7 +187,7 @@ async def delete_staff(
     db = await get_db()
     
     try:
-        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["staff", "admin"]}})
+        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}})
     except:
         raise HTTPException(status_code=400, detail="Invalid staff ID")
     
