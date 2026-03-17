@@ -21,22 +21,18 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker gcr.io --quiet
+
       - name: Build and push Docker image
         run: |
-          BUILD_ID=$(gcloud builds submit \
-            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/diamond-erp-backend \
-            --project ${{ secrets.GCP_PROJECT_ID }} \
-            --async \
-            --format="value(id)")
-          echo "Build ID: $BUILD_ID"
-          # Wait for build to complete
-          gcloud builds log --stream $BUILD_ID --project ${{ secrets.GCP_PROJECT_ID }} || \
-          gcloud builds wait $BUILD_ID --project ${{ secrets.GCP_PROJECT_ID }}
+          docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/diamond-erp-backend:latest .
+          docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/diamond-erp-backend:latest
 
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy diamond-erp-backend \
-            --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/diamond-erp-backend \
+            --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/diamond-erp-backend:latest \
             --platform managed \
             --region us-central1 \
             --allow-unauthenticated \
