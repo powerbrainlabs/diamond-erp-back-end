@@ -5,7 +5,7 @@ import uuid
 
 from pydantic import BaseModel
 from ..core.minio_client import minio_client
-from minio.commonconfig import CopySource
+from ..core.minio_client import CopySource
 from ..db.database import get_db
 from ..core.dependencies import require_staff
 from ..utils.minio_helpers import get_presigned_url

@@ -1,6 +1,3 @@
-from datetime import timedelta
-from minio import Minio
-from ..core.minio_client import minio_client
 from ..core.config import settings
 
 def get_presigned_url(bucket: str, object_name: str, expires: int = 3600) -> str:

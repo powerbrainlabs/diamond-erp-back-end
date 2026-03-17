@@ -38,10 +38,10 @@ class Settings(BaseSettings):
     ADMIN_NAME: str = "Administrator"
 
 
-    MINIO_ENDPOINT: str = "localhost:9000"
-    MINIO_ACCESS_KEY: str = "admin"
-    MINIO_SECRET_KEY: str = "password123"
-    MINIO_USE_TLS: bool = False
+    # Cloudflare R2 (S3-compatible)
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
 
     # Background Removal API
     REMBG_API_URL: str

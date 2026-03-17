@@ -109,3 +109,8 @@ app.include_router(photos_router)
 @app.get("/")
 async def root():
     return {"name": settings.APP_NAME, "status": "ok"}
+
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}

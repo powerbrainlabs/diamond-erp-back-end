@@ -4,7 +4,7 @@ from datetime import datetime
 import uuid
 
 from pydantic import BaseModel
-from minio.commonconfig import CopySource
+from ..core.minio_client import CopySource
 
 from ..db.database import get_db
 from ..core.dependencies import require_staff

@@ -1,19 +1,117 @@
-from minio import Minio
+"""
+Cloudflare R2 client — drop-in replacement for the MinIO client.
+Exposes the same interface (put_object, get_object, stat_object,
+copy_object, remove_object, bucket_exists, make_bucket) so existing
+API files need no changes beyond swapping the CopySource import.
+"""
+import io
+from dataclasses import dataclass
+from datetime import timezone
+
+import boto3
+from botocore.exceptions import ClientError
+
 from ..core.config import settings
 
-minio_client = Minio(
-    settings.MINIO_ENDPOINT,
-    access_key=settings.MINIO_ACCESS_KEY,
-    secret_key=settings.MINIO_SECRET_KEY,
-    secure=settings.MINIO_USE_TLS,
-)
 
-# Ensure buckets exist at startup
+# ── CopySource ─────────────────────────────────────────────────────────────
+# photos.py and certification.py import this from here instead of minio.commonconfig
+
+@dataclass
+class CopySource:
+    bucket_name: str
+    object_name: str
+
+
+# ── Response wrappers ───────────────────────────────────────────────────────
+
+class StatObject:
+    """Mimics minio StatObject."""
+    def __init__(self, head: dict):
+        self.size = head["ContentLength"]
+        self.content_type = head.get("ContentType", "application/octet-stream")
+        lm = head.get("LastModified")
+        self.last_modified = lm.astimezone(timezone.utc) if lm else None
+
+
+class GetObjectResponse:
+    """Mimics the response returned by minio_client.get_object()."""
+    def __init__(self, response: dict):
+        self._body = response["Body"]
+        lm = response.get("LastModified")
+        self.headers = {
+            "content-type": response.get("ContentType", "application/octet-stream"),
+            "etag": response.get("ETag", ""),
+            "last-modified": lm.strftime("%a, %d %b %Y %H:%M:%S GMT") if lm else "",
+        }
+
+    def read(self) -> bytes:
+        return self._body.read()
+
+    def __iter__(self):
+        return self._body.__iter__()
+
+
+# ── R2 client ───────────────────────────────────────────────────────────────
+
+class R2Client:
+    """boto3-backed S3 client targeting Cloudflare R2."""
+
+    def __init__(self):
+        self._s3 = boto3.client(
+            "s3",
+            endpoint_url=f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+            aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+            region_name="auto",
+        )
+
+    def put_object(self, bucket_name: str, object_name: str, data, length: int, content_type: str):
+        self._s3.put_object(
+            Bucket=bucket_name,
+            Key=object_name,
+            Body=data,
+            ContentLength=length,
+            ContentType=content_type,
+        )
+
+    def get_object(self, bucket: str, key: str) -> GetObjectResponse:
+        response = self._s3.get_object(Bucket=bucket, Key=key)
+        return GetObjectResponse(response)
+
+    def stat_object(self, bucket: str, key: str) -> StatObject:
+        response = self._s3.head_object(Bucket=bucket, Key=key)
+        return StatObject(response)
+
+    def copy_object(self, dest_bucket: str, dest_key: str, source: CopySource):
+        self._s3.copy_object(
+            Bucket=dest_bucket,
+            Key=dest_key,
+            CopySource={"Bucket": source.bucket_name, "Key": source.object_name},
+        )
+
+    def remove_object(self, bucket: str, key: str):
+        self._s3.delete_object(Bucket=bucket, Key=key)
+
+    def bucket_exists(self, bucket: str) -> bool:
+        try:
+            self._s3.head_bucket(Bucket=bucket)
+            return True
+        except ClientError:
+            return False
+
+    def make_bucket(self, bucket: str):
+        self._s3.create_bucket(Bucket=bucket)
+
+
+minio_client = R2Client()
+
+
 def ensure_buckets():
     try:
         for bucket in ["cert-temp", "certificates", "job-photos"]:
             if not minio_client.bucket_exists(bucket):
                 minio_client.make_bucket(bucket)
-        print("✅ MinIO buckets ready.")
+        print("✅ R2 buckets ready.")
     except Exception as e:
-        print(f"⚠️  WARNING: MinIO not available ({e}). File upload features will be disabled until MinIO is started.")
+        print(f"⚠️  WARNING: R2 not available ({e}). File upload features will be disabled.")
