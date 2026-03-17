@@ -1,61 +1,37 @@
-name: Deploy Backend
+name: Deploy to Cloud Run
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch: # Allow manual trigger
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debug Connectivity
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push Docker image
         run: |
-          echo "Testing connection to ${{ secrets.GAC_DEPLOY_HOST }} on port ${{ secrets.GAC_DEPLOY_PORT || 22 }}..."
-          # Use timeout to avoid hanging if the port is completely blocked
-          timeout 10s bash -c "cat < /dev/tcp/${{ secrets.GAC_DEPLOY_HOST }}/${{ secrets.GAC_DEPLOY_PORT || 22 }}" && echo "Port is open" || echo "Connection failed or timed out"
+          gcloud builds submit \
+            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/diamond-erp-backend \
+            --project ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.GAC_DEPLOY_HOST }}
-          username: ${{ secrets.GAC_DEPLOY_USER }}
-          key: ${{ secrets.GAC_DEPLOY_SSH_KEY }}
-          port: ${{ secrets.GAC_DEPLOY_PORT || 22 }}
-          script: |
-            export PATH="$HOME/.local/bin:$PATH"
-            cd /home/powerbrainlabs/projects/diamond-erp/diamond-erp-back-end
-            
-            # Pull latest code
-            git pull origin main
-            
-            # Rebuild and restart backend container
-            docker-compose down backend || true
-            docker-compose build --no-cache backend
-            docker-compose up -d backend
-            
-            # Clean up old images
-            docker image prune -f
-            
-            echo "Backend deployment completed successfully!"
-
-      - name: Health check
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.GAC_DEPLOY_HOST }}
-          username: ${{ secrets.GAC_DEPLOY_USER }}
-          key: ${{ secrets.GAC_DEPLOY_SSH_KEY }}
-          port: ${{ secrets.GAC_DEPLOY_PORT || 22 }}
-          script: |
-            sleep 5
-            docker ps | grep diamond-erp-backend
-            # Check if backend is responding (root endpoint returns {"status": "ok"})
-            response=$(curl -s http://localhost:8000/)
-            echo "$response" | grep -q "status" || exit 1
-            echo "Backend health check passed!"
-
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy diamond-erp-backend \
+            --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/diamond-erp-backend \
+            --platform managed \
+            --region us-central1 \
+            --allow-unauthenticated \
+            --project ${{ secrets.GCP_PROJECT_ID }}
