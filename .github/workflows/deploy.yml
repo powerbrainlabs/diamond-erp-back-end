@@ -1,4 +1,4 @@
-name: Deploy to Cloud Run
+name: Deploy to EC2
 
 on:
   push:
@@ -13,27 +13,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 120s
+          script: |
+            cd /home/ec2-user/app
 
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+            # Pull latest code
+            git pull origin main
 
-      - name: Configure Docker for GCR
-        run: gcloud auth configure-docker gcr.io --quiet
+            # Install any new dependencies
+            pip3 install -r requirements.txt --quiet
 
-      - name: Build and push Docker image
-        run: |
-          docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/diamond-erp-backend:latest .
-          docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/diamond-erp-backend:latest
+            # Restart the service
+            sudo systemctl restart diamond-erp
 
-      - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy diamond-erp-backend \
-            --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/diamond-erp-backend:latest \
-            --platform managed \
-            --region us-central1 \
-            --allow-unauthenticated \
-            --project ${{ secrets.GCP_PROJECT_ID }}
+            # Wait and verify it's running
+            sleep 5
+            sudo systemctl is-active diamond-erp

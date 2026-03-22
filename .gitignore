@@ -83,3 +83,6 @@ venv.bak/
 # MinIO data
 minio_data/
 
+# SSH keys
+*.pem
+
