@@ -94,6 +94,7 @@ async def upcoming_deliveries(days: int = Query(7), current_user: dict = Depends
 async def list_jobs(
     current_user: dict = Depends(require_staff),
     status: Optional[str] = None,
+    job_type: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
     sort_by: str = "created_at",
@@ -103,6 +104,8 @@ async def list_jobs(
     filt = {"is_deleted": False}
     if status:
         filt["status"] = status
+    if job_type:
+        filt["job_type"] = job_type
 
     sort_field = ALLOWED_SORTS.get(sort_by, "created_at")
     sort_dir = -1 if order == "desc" else 1
