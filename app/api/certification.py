@@ -27,7 +27,14 @@ def promote_file_from_temp(file_id: str) -> str:
     src_bucket = "cert-temp"
     dest_bucket = "certificates"
     try:
-        # Check if file exists in temp bucket before trying to move it
+        # Check if file already exists in permanent bucket (already promoted)
+        try:
+            minio_client.stat_object(dest_bucket, file_id)
+            return f"{dest_bucket}/{file_id}"
+        except Exception:
+            pass
+
+        # Check if file exists in temp bucket
         try:
             minio_client.stat_object(src_bucket, file_id)
         except Exception as stat_error:
