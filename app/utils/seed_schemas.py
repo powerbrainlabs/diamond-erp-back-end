@@ -956,7 +956,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Primary Stone Wt",
+            "label": "Primary Stone Weight",
             "field_name": "primary_stone_weight",
             "field_type": "text",
             "is_required": False,
@@ -966,7 +966,7 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Secondary Stone Wt",
+            "label": "Secondary Stone Weight",
             "field_name": "secondary_stone_weight",
             "field_type": "text",
             "is_required": False,
