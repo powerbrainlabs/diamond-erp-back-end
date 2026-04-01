@@ -279,6 +279,7 @@ class CertificationUpdate(BaseModel):
     photo_file_id: Optional[str] = None
     logo_file_id: Optional[str] = None
     rear_logo_file_id: Optional[str] = None
+    gallery_photo_uuid: Optional[str] = None
     remove_photo: bool = False
     remove_logo: bool = False
     remove_rear_logo: bool = False
@@ -308,6 +309,15 @@ async def update_certification(cert_uuid: str, payload: CertificationUpdate):
     # Photo
     if payload.remove_photo:
         updates["photo_url"] = None
+    elif payload.gallery_photo_uuid:
+        gallery_doc = await db.job_photos.find_one({"uuid": payload.gallery_photo_uuid, "is_deleted": False})
+        if not gallery_doc:
+            raise HTTPException(status_code=404, detail="Gallery photo not found")
+        src_file_id = gallery_doc["file_id"]
+        dest_file_id = f"{uuid.uuid4()}_{src_file_id}"
+        source = CopySource("job-photos", src_file_id)
+        minio_client.copy_object("certificates", dest_file_id, source)
+        updates["photo_url"] = f"certificates/{dest_file_id}"
     elif payload.photo_file_id:
         updates["photo_url"] = promote_file_from_temp(payload.photo_file_id)
 
