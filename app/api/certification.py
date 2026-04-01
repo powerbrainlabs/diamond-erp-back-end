@@ -62,6 +62,7 @@ def promote_file_from_temp(file_id: str) -> str:
 class CertificationCreate(BaseModel):
     type: str
     client_id: str
+    job_id: Optional[str] = None
     category_id: Optional[str] = None  # uuid of category_schema (optional for backward compat)
     fields: Dict[str, Any]
     photo_file_id: Optional[str] = None
@@ -150,6 +151,7 @@ async def create_certification(
         "certificate_number": certificate_number,
         "type": payload.type,
         "client_id": payload.client_id,
+        "job_id": payload.job_id or "",
         "category_id": payload.category_id,
         "fields": payload.fields,
         "photo_url": photo_url,
@@ -272,6 +274,7 @@ def attach_presigned_urls(doc):
 
 class CertificationUpdate(BaseModel):
     client_id: Optional[str] = None
+    job_id: Optional[str] = None
     fields: Optional[Dict[str, Any]] = None
     photo_file_id: Optional[str] = None
     logo_file_id: Optional[str] = None
@@ -295,6 +298,9 @@ async def update_certification(cert_uuid: str, payload: CertificationUpdate):
         if not client:
             raise HTTPException(status_code=404, detail="Client not found")
         updates["client_id"] = payload.client_id
+
+    if payload.job_id is not None:
+        updates["job_id"] = payload.job_id
 
     if payload.fields is not None:
         updates["fields"] = payload.fields
