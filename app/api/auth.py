@@ -52,18 +52,19 @@ async def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = 
         raise HTTPException(status_code=401, detail="Invalid email or password")
     access = create_access_token(str(user["_id"]), user["email"], user["role"])
     refresh = create_refresh_token(str(user["_id"]), user["email"], user["role"])
-    
-    # Note: Login is a public endpoint, so auto_log_action can't be used here
-    # We'll log it manually for now, or you can add it to a middleware
-    from ..utils.action_logger import log_action
-    await log_action(
-        user_id=str(user["_id"]),
-        action_type="login",
-        resource_type="auth",
-        details=f"User logged in: {user.get('name', normalized)}",
-        ip_address=request.client.host if request and request.client else None,
-    )
-    
+
+    try:
+        from ..utils.action_logger import log_action
+        await log_action(
+            user_id=str(user["_id"]),
+            action_type="login",
+            resource_type="auth",
+            details=f"User logged in: {user.get('name', normalized)}",
+            ip_address=request.client.host if request and request.client else None,
+        )
+    except Exception:
+        pass
+
     return TokenResponse(
         access_token=access["token"],
         refresh_token=refresh["token"],
