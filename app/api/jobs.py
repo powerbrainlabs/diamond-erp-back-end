@@ -57,6 +57,7 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
         "item_quantity": payload.item_quantity,
         "item_weight": payload.item_weight,
         "item_size": payload.item_size,
+        "items": [i.dict() for i in payload.items],
         "created_by": {
             "user_id": current_user["id"],
             "name": current_user["name"],
@@ -145,12 +146,14 @@ async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends
 
     updates = {}
     for field in [
-        "item_type", "item_description", "priority", 
+        "item_type", "item_description", "priority",
         "expected_delivery_date", "notes", "received_from_name"
     ]:
         val = getattr(payload, field)
         if val is not None:
             updates[field] = val
+    if payload.items is not None:
+        updates["items"] = [i.dict() for i in payload.items]
 
     updates["updated_at"] = datetime.utcnow()
     await db.jobs.update_one({"_id": doc["_id"]}, {"$set": updates})

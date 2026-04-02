@@ -38,12 +38,18 @@ class Settings(BaseSettings):
     ADMIN_NAME: str = "Administrator"
 
 
-    # Cloudflare R2 (S3-compatible) — leave blank to use local MinIO
+    # Storage backend: "r2" | "minio" | "auto"
+    # "r2"   → always use Cloudflare R2 (requires R2_* vars)
+    # "minio" → always use local MinIO
+    # "auto"  → use R2 if R2_ACCOUNT_ID is set, otherwise MinIO
+    STORAGE_BACKEND: str = "auto"
+
+    # Cloudflare R2 (S3-compatible)
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY_ID: str = ""
     R2_SECRET_ACCESS_KEY: str = ""
 
-    # Local MinIO fallback (used when R2_ACCOUNT_ID is not set)
+    # Local MinIO (used when STORAGE_BACKEND=minio or auto without R2 creds)
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "admin"
     MINIO_SECRET_KEY: str = "password123"

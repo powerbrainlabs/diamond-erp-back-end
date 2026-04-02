@@ -62,27 +62,35 @@ class R2Client:
         self._s3 = None
 
     def _get_s3(self):
-        if self._s3 is None:
-            if settings.R2_ACCOUNT_ID:
-                # Cloudflare R2
-                self._s3 = boto3.client(
-                    "s3",
-                    endpoint_url=f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
-                    aws_access_key_id=settings.R2_ACCESS_KEY_ID,
-                    aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
-                    region_name="auto",
-                )
-            else:
-                # Local MinIO fallback
-                protocol = "https" if settings.MINIO_USE_TLS else "http"
-                self._s3 = boto3.client(
-                    "s3",
-                    endpoint_url=f"{protocol}://{settings.MINIO_ENDPOINT}",
-                    aws_access_key_id=settings.MINIO_ACCESS_KEY,
-                    aws_secret_access_key=settings.MINIO_SECRET_KEY,
-                    region_name="us-east-1",
-                    config=BotocoreConfig(signature_version="s3v4"),
-                )
+        if self._s3 is not None:
+            return self._s3
+
+        backend = settings.STORAGE_BACKEND.lower()
+        use_r2 = backend == "r2" or (backend == "auto" and bool(settings.R2_ACCOUNT_ID))
+
+        if use_r2:
+            if not settings.R2_ACCOUNT_ID:
+                raise RuntimeError("STORAGE_BACKEND=r2 but R2_ACCOUNT_ID is not set")
+            self._s3 = boto3.client(
+                "s3",
+                endpoint_url=f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+                aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+                region_name="auto",
+            )
+            print("☁️  Storage: Cloudflare R2")
+        else:
+            protocol = "https" if settings.MINIO_USE_TLS else "http"
+            self._s3 = boto3.client(
+                "s3",
+                endpoint_url=f"{protocol}://{settings.MINIO_ENDPOINT}",
+                aws_access_key_id=settings.MINIO_ACCESS_KEY,
+                aws_secret_access_key=settings.MINIO_SECRET_KEY,
+                region_name="us-east-1",
+                config=BotocoreConfig(signature_version="s3v4"),
+            )
+            print(f"🗄️  Storage: MinIO at {settings.MINIO_ENDPOINT}")
+
         return self._s3
 
     def put_object(self, bucket_name: str, object_name: str, data, length: int, content_type: str):
