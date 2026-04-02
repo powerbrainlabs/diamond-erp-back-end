@@ -4,10 +4,7 @@ from datetime import datetime
 
 
 async def seed_default_attributes(db):
-    """Seed predefined attribute values for certificate dropdowns."""
-    existing = await db.attributes.count_documents({"is_deleted": False})
-    if existing > 0:
-        return  # Already seeded
+    """Upsert predefined attribute values — runs on every startup, safe to re-run."""
 
     now = datetime.utcnow()
     system_author = {"user_id": "system", "name": "System", "email": "system"}
@@ -189,15 +186,23 @@ async def seed_default_attributes(db):
             "updated_at": now,
         })
 
-    await db.attributes.insert_many(attributes)
+    for attr in attributes:
+        await db.attributes.update_one(
+            {"group": attr["group"], "type": attr["type"], "name": attr["name"]},
+            {
+                "$set": {k: v for k, v in attr.items() if k not in ("created_at", "created_by", "uuid")},
+                "$setOnInsert": {
+                    "uuid": attr["uuid"],
+                    "created_at": attr["created_at"],
+                    "created_by": attr["created_by"],
+                },
+            },
+            upsert=True,
+        )
 
 
 async def seed_default_certificate_types(db):
-    """Create comprehensive certificate types matching old hr-admin-gac system."""
-    existing = await db.certificate_types.count_documents({"is_deleted": False})
-    if existing > 0:
-        return
-
+    """Upsert certificate types — runs on every startup, safe to re-run."""
     now = datetime.utcnow()
     system_author = {"user_id": "system", "name": "System", "email": "system"}
 
@@ -299,15 +304,23 @@ async def seed_default_certificate_types(db):
             "updated_at": now,
         },
     ]
-    await db.certificate_types.insert_many(types)
+    for t in types:
+        await db.certificate_types.update_one(
+            {"slug": t["slug"]},
+            {
+                "$set": {k: v for k, v in t.items() if k not in ("created_at", "created_by", "uuid")},
+                "$setOnInsert": {
+                    "uuid": t["uuid"],
+                    "created_at": t["created_at"],
+                    "created_by": t["created_by"],
+                },
+            },
+            upsert=True,
+        )
 
 
 async def seed_default_category_schemas(db):
-    """Create comprehensive certificate schemas matching old hr-admin-gac system."""
-    existing = await db.category_schemas.count_documents({"is_deleted": False})
-    if existing > 0:
-        return
-
+    """Upsert category schemas — runs on every startup, safe to re-run."""
     now = datetime.utcnow()
     system_author = {"user_id": "system", "name": "System", "email": "system"}
 
@@ -1121,5 +1134,16 @@ async def seed_default_category_schemas(db):
         "updated_at": now,
     })
 
-    # Insert all schemas
-    await db.category_schemas.insert_many(schemas)
+    for s in schemas:
+        await db.category_schemas.update_one(
+            {"group": s["group"]},
+            {
+                "$set": {k: v for k, v in s.items() if k not in ("created_at", "created_by", "uuid")},
+                "$setOnInsert": {
+                    "uuid": s["uuid"],
+                    "created_at": s["created_at"],
+                    "created_by": s["created_by"],
+                },
+            },
+            upsert=True,
+        )
