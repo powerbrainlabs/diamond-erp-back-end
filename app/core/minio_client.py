@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import timezone
 
 import boto3
+from botocore.config import Config as BotocoreConfig
 from botocore.exceptions import ClientError
 
 from ..core.config import settings
@@ -58,16 +59,42 @@ class R2Client:
     """boto3-backed S3 client targeting Cloudflare R2."""
 
     def __init__(self):
-        self._s3 = boto3.client(
-            "s3",
-            endpoint_url=f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
-            aws_access_key_id=settings.R2_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
-            region_name="auto",
-        )
+        self._s3 = None
+
+    def _get_s3(self):
+        if self._s3 is not None:
+            return self._s3
+
+        backend = settings.STORAGE_BACKEND.lower()
+        use_r2 = backend == "r2" or (backend == "auto" and bool(settings.R2_ACCOUNT_ID))
+
+        if use_r2:
+            if not settings.R2_ACCOUNT_ID:
+                raise RuntimeError("STORAGE_BACKEND=r2 but R2_ACCOUNT_ID is not set")
+            self._s3 = boto3.client(
+                "s3",
+                endpoint_url=f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+                aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+                region_name="auto",
+            )
+            print("☁️  Storage: Cloudflare R2")
+        else:
+            protocol = "https" if settings.MINIO_USE_TLS else "http"
+            self._s3 = boto3.client(
+                "s3",
+                endpoint_url=f"{protocol}://{settings.MINIO_ENDPOINT}",
+                aws_access_key_id=settings.MINIO_ACCESS_KEY,
+                aws_secret_access_key=settings.MINIO_SECRET_KEY,
+                region_name="us-east-1",
+                config=BotocoreConfig(signature_version="s3v4"),
+            )
+            print(f"🗄️  Storage: MinIO at {settings.MINIO_ENDPOINT}")
+
+        return self._s3
 
     def put_object(self, bucket_name: str, object_name: str, data, length: int, content_type: str):
-        self._s3.put_object(
+        self._get_s3().put_object(
             Bucket=bucket_name,
             Key=object_name,
             Body=data,
@@ -76,32 +103,32 @@ class R2Client:
         )
 
     def get_object(self, bucket: str, key: str) -> GetObjectResponse:
-        response = self._s3.get_object(Bucket=bucket, Key=key)
+        response = self._get_s3().get_object(Bucket=bucket, Key=key)
         return GetObjectResponse(response)
 
     def stat_object(self, bucket: str, key: str) -> StatObject:
-        response = self._s3.head_object(Bucket=bucket, Key=key)
+        response = self._get_s3().head_object(Bucket=bucket, Key=key)
         return StatObject(response)
 
     def copy_object(self, dest_bucket: str, dest_key: str, source: CopySource):
-        self._s3.copy_object(
+        self._get_s3().copy_object(
             Bucket=dest_bucket,
             Key=dest_key,
             CopySource={"Bucket": source.bucket_name, "Key": source.object_name},
         )
 
     def remove_object(self, bucket: str, key: str):
-        self._s3.delete_object(Bucket=bucket, Key=key)
+        self._get_s3().delete_object(Bucket=bucket, Key=key)
 
     def bucket_exists(self, bucket: str) -> bool:
         try:
-            self._s3.head_bucket(Bucket=bucket)
+            self._get_s3().head_bucket(Bucket=bucket)
             return True
         except ClientError:
             return False
 
     def make_bucket(self, bucket: str):
-        self._s3.create_bucket(Bucket=bucket)
+        self._get_s3().create_bucket(Bucket=bucket)
 
 
 minio_client = R2Client()

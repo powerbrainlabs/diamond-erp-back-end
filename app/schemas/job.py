@@ -1,8 +1,14 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from datetime import date, datetime
 
 ItemType = Literal["loose_diamond", "diamond", "jewelry", "gemstone"]
+
+
+class JobItem(BaseModel):
+    item_type: str
+    weight: Optional[float] = None
+    quantity: Optional[int] = None
 Status = Literal["pending", "qc", "rfd", "photography", "certification", "completed"]
 Priority = Literal["low", "medium", "high", "urgent"]
 
@@ -26,6 +32,7 @@ class JobCreate(BaseModel):
     item_quantity: Optional[int] = None
     item_weight: Optional[float] = None
     item_size: Optional[str] = None
+    items: List[JobItem] = []
 
 class JobResponse(BaseModel):
     uuid: str
@@ -48,6 +55,7 @@ class JobUpdate(BaseModel):
     expected_delivery_date: Optional[date] = None
     actual_delivery_date: Optional[datetime] = None
     notes: Optional[str] = None
+    items: Optional[List[JobItem]] = None
 
 class JobStatusPatch(BaseModel):
     status: Status

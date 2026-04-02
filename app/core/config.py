@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://staging.gac.powerbrainlabs.com,http://146.148.68.124:3000"
 
     # Backend URL for image proxy and file serving
-    BACKEND_URL: str = "http://localhost:8002"
+    BACKEND_URL: str = "http://localhost:8000"
 
     # Super Admin seed
     SUPER_ADMIN_EMAIL: str = "superadmin@diamonderp.com"
@@ -38,10 +38,22 @@ class Settings(BaseSettings):
     ADMIN_NAME: str = "Administrator"
 
 
+    # Storage backend: "r2" | "minio" | "auto"
+    # "r2"   → always use Cloudflare R2 (requires R2_* vars)
+    # "minio" → always use local MinIO
+    # "auto"  → use R2 if R2_ACCOUNT_ID is set, otherwise MinIO
+    STORAGE_BACKEND: str = "auto"
+
     # Cloudflare R2 (S3-compatible)
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY_ID: str = ""
     R2_SECRET_ACCESS_KEY: str = ""
+
+    # Local MinIO (used when STORAGE_BACKEND=minio or auto without R2 creds)
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = "admin"
+    MINIO_SECRET_KEY: str = "password123"
+    MINIO_USE_TLS: bool = False
 
     # Background Removal API
     REMBG_API_URL: str
