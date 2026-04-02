@@ -18,7 +18,7 @@ StageStatus = Literal["pending", "in_progress", "done"]
 
 class JobCreate(BaseModel):
     client_id: str
-    item_type: Literal["loose_diamond", "diamond", "jewelry", "gemstone"]
+    item_type: str
     item_description: str
     priority: Literal["low", "medium", "high", "urgent"] = "medium"
     expected_delivery_date: Optional[datetime] = None
