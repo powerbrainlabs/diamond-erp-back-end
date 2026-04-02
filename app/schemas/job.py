@@ -46,7 +46,7 @@ class JobResponse(BaseModel):
 class JobUpdate(BaseModel):
     client_name: Optional[str] = Field(default=None, min_length=2)
     client_contact: Optional[str] = Field(default=None, min_length=10, max_length=15)
-    item_type: Optional[ItemType] = None
+    item_type: Optional[str] = None
     item_description: Optional[str] = None
     status: Optional[Status] = None
     assigned_to: Optional[str] = None  # user_id
@@ -55,6 +55,7 @@ class JobUpdate(BaseModel):
     expected_delivery_date: Optional[date] = None
     actual_delivery_date: Optional[datetime] = None
     notes: Optional[str] = None
+    received_datetime: Optional[datetime] = None
     items: Optional[List[JobItem]] = None
 
 class JobStatusPatch(BaseModel):

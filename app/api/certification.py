@@ -386,12 +386,21 @@ async def list_certifications(
     if type:
         filt["type"] = type
 
-    # Search on type & fields
+    # Search on certificate_number, type, fields, and client name
     if search:
-        filt["$or"] = [
+        matching_clients = await db.clients.find(
+            {"name": {"$regex": search, "$options": "i"}, "is_deleted": False},
+            {"uuid": 1}
+        ).to_list(length=200)
+        matching_client_ids = [c["uuid"] for c in matching_clients]
+        search_conditions = [
+            {"certificate_number": {"$regex": search, "$options": "i"}},
             {"fields": {"$regex": search, "$options": "i"}},
             {"type": {"$regex": search, "$options": "i"}},
         ]
+        if matching_client_ids:
+            search_conditions.append({"client_id": {"$in": matching_client_ids}})
+        filt["$or"] = search_conditions
 
     sort_field = ALLOWED_SORTS.get(sort_by, "created_at")
     sort_dir = -1 if order == "desc" else 1

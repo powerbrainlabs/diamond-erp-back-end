@@ -147,11 +147,13 @@ async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends
     updates = {}
     for field in [
         "item_type", "item_description", "priority",
-        "expected_delivery_date", "notes", "received_from_name"
+        "expected_delivery_date", "notes", "received_from_name", "received_date"
     ]:
-        val = getattr(payload, field)
+        val = getattr(payload, field, None)
         if val is not None:
             updates[field] = val
+    if payload.received_datetime is not None:
+        updates["received_date"] = payload.received_datetime
     if payload.items is not None:
         updates["items"] = [i.dict() for i in payload.items]
 
