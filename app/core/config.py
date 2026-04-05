@@ -50,8 +50,8 @@ class Settings(BaseSettings):
 
     # Local MinIO (used when STORAGE_BACKEND=minio or auto without R2 creds)
     MINIO_ENDPOINT: str = "localhost:9000"
-    MINIO_ACCESS_KEY: str = "admin"
-    MINIO_SECRET_KEY: str = "password123"
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_USE_TLS: bool = False
 
     # Background Removal API
