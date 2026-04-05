@@ -28,7 +28,11 @@ async def init_db():
     await db.users.create_index([("organization_id", ASCENDING)])
 
     # Jobs indexes
-    await db.jobs.create_index([("job_number", ASCENDING)], unique=True)
+    try:
+        await db.jobs.drop_index("job_number_1")
+    except Exception:
+        pass
+    await db.jobs.create_index([("organization_id", ASCENDING), ("job_number", ASCENDING)], unique=True)
     await db.jobs.create_index([("status", ASCENDING)])
     await db.jobs.create_index([("client_name", TEXT), ("item_description", TEXT)], name="client_item_text")
     await db.jobs.create_index([("created_at", DESCENDING)])
