@@ -4,7 +4,7 @@ from typing import Optional, Literal, List
 from datetime import datetime
 from bson import ObjectId
 
-from ..core.dependencies import require_admin
+from ..core.dependencies import require_admin, organization_filter
 from ..core.security import hash_password, verify_password
 from ..db.database import get_db
 from ..utils.serializers import dump_user
@@ -57,6 +57,7 @@ async def create_staff(
         "name": payload.name,
         "role": payload.role,
         "features": valid_features,
+        "organization_id": ObjectId(current_user["organization_id"]) if current_user.get("organization_id") else None,
         "is_active": True,
         "created_at": now,
         "updated_at": now,
@@ -82,7 +83,7 @@ async def list_staff(
     """List all staff members and admins (admin only)"""
     db = await get_db()
     
-    query = {"role": {"$in": ["user", "admin"]}}
+    query = {"role": {"$in": ["user", "admin"]}, **organization_filter(current_user)}
     
     if search:
         query["$or"] = [
@@ -121,7 +122,7 @@ async def get_staff(
     db = await get_db()
     
     try:
-        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}})
+        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}, **organization_filter(current_user)})
     except:
         raise HTTPException(status_code=400, detail="Invalid staff ID")
     
@@ -141,7 +142,7 @@ async def update_staff(
     db = await get_db()
     
     try:
-        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}})
+        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}, **organization_filter(current_user)})
     except:
         raise HTTPException(status_code=400, detail="Invalid staff ID")
     
@@ -170,11 +171,11 @@ async def update_staff(
         update_data["features"] = [f for f in payload.features if f in AVAILABLE_FEATURES]
     
     await db.users.update_one(
-        {"_id": ObjectId(staff_id)},
+        {"_id": ObjectId(staff_id), **organization_filter(current_user)},
         {"$set": update_data}
     )
     
-    updated = await db.users.find_one({"_id": ObjectId(staff_id)})
+    updated = await db.users.find_one({"_id": ObjectId(staff_id), **organization_filter(current_user)})
     return dump_user(updated)
 
 @router.delete("/{staff_id}")
@@ -187,7 +188,7 @@ async def delete_staff(
     db = await get_db()
     
     try:
-        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}})
+        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}, **organization_filter(current_user)})
     except:
         raise HTTPException(status_code=400, detail="Invalid staff ID")
     
@@ -196,11 +197,10 @@ async def delete_staff(
     
     # Soft delete - set is_active to False
     await db.users.update_one(
-        {"_id": ObjectId(staff_id)},
+        {"_id": ObjectId(staff_id), **organization_filter(current_user)},
         {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
     )
     
     # No logging code needed - auto_log_action handles it automatically!
     
     return {"message": "Staff member deactivated successfully"}
-

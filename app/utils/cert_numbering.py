@@ -2,7 +2,7 @@ from datetime import datetime
 from ..db.database import get_db
 
 
-async def next_certificate_number() -> str:
+async def next_certificate_number(organization_id: str | None = None) -> str:
     """
     Generate next certificate number in format: G{YYMMDD}{XXXX}
     Example: G250215001 (generated on Feb 15, 2025)
@@ -20,7 +20,10 @@ async def next_certificate_number() -> str:
     # Find the highest certificate number for today
     # Pattern match certificates that start with today's prefix
     latest_cert = await db.certifications.find_one(
-        {"certificate_number": {"$regex": f"^{prefix}"}},
+        {
+            "certificate_number": {"$regex": f"^{prefix}"},
+            **({"organization_id": organization_id} if organization_id else {}),
+        },
         sort=[("certificate_number", -1)]
     )
 
@@ -45,7 +48,10 @@ async def next_certificate_number() -> str:
     cert_number = f"{prefix}{next_seq:04d}"
 
     # Double-check the number doesn't exist (extra safety)
-    existing = await db.certifications.find_one({"certificate_number": cert_number})
+    existing = await db.certifications.find_one({
+        "certificate_number": cert_number,
+        **({"organization_id": organization_id} if organization_id else {}),
+    })
     if existing:
         # If it somehow exists, increment and try again (recursive)
         print(f"⚠️  Warning: Certificate number {cert_number} already exists, retrying...")

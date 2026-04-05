@@ -60,38 +60,51 @@ class R2Client:
 
     def __init__(self):
         self._s3 = None
+        self._backend_name = None
 
-    def _get_s3(self):
+    def _build_r2_client(self):
+        return boto3.client(
+            "s3",
+            endpoint_url=f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+            aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+            region_name="auto",
+        )
+
+    def _build_minio_client(self):
+        protocol = "https" if settings.MINIO_USE_TLS else "http"
+        return boto3.client(
+            "s3",
+            endpoint_url=f"{protocol}://{settings.MINIO_ENDPOINT}",
+            aws_access_key_id=settings.MINIO_ACCESS_KEY,
+            aws_secret_access_key=settings.MINIO_SECRET_KEY,
+            region_name="us-east-1",
+            config=BotocoreConfig(signature_version="s3v4"),
+        )
+
+    def _get_s3(self, force_backend: str | None = None):
         if self._s3 is not None:
             return self._s3
 
-        backend = settings.STORAGE_BACKEND.lower()
+        backend = (force_backend or settings.STORAGE_BACKEND).lower()
         use_r2 = backend == "r2" or (backend == "auto" and bool(settings.R2_ACCOUNT_ID))
 
         if use_r2:
             if not settings.R2_ACCOUNT_ID:
                 raise RuntimeError("STORAGE_BACKEND=r2 but R2_ACCOUNT_ID is not set")
-            self._s3 = boto3.client(
-                "s3",
-                endpoint_url=f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
-                aws_access_key_id=settings.R2_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
-                region_name="auto",
-            )
+            self._s3 = self._build_r2_client()
+            self._backend_name = "r2"
             print("☁️  Storage: Cloudflare R2")
         else:
-            protocol = "https" if settings.MINIO_USE_TLS else "http"
-            self._s3 = boto3.client(
-                "s3",
-                endpoint_url=f"{protocol}://{settings.MINIO_ENDPOINT}",
-                aws_access_key_id=settings.MINIO_ACCESS_KEY,
-                aws_secret_access_key=settings.MINIO_SECRET_KEY,
-                region_name="us-east-1",
-                config=BotocoreConfig(signature_version="s3v4"),
-            )
+            self._s3 = self._build_minio_client()
+            self._backend_name = "minio"
             print(f"🗄️  Storage: MinIO at {settings.MINIO_ENDPOINT}")
 
         return self._s3
+
+    def reset(self):
+        self._s3 = None
+        self._backend_name = None
 
     def put_object(self, bucket_name: str, object_name: str, data, length: int, content_type: str):
         self._get_s3().put_object(
@@ -135,10 +148,25 @@ minio_client = R2Client()
 
 
 def ensure_buckets():
+    backend = settings.STORAGE_BACKEND.lower()
     try:
         for bucket in ["cert-temp", "certificates", "job-photos"]:
             if not minio_client.bucket_exists(bucket):
                 minio_client.make_bucket(bucket)
-        print("✅ R2 buckets ready.")
+        storage_label = "R2" if minio_client._backend_name == "r2" else "MinIO"
+        print(f"✅ {storage_label} buckets ready.")
     except Exception as e:
-        print(f"⚠️  WARNING: R2 not available ({e}). File upload features will be disabled.")
+        if backend == "auto":
+            print(f"⚠️  WARNING: R2 not available ({e}). Falling back to MinIO.")
+            try:
+                minio_client.reset()
+                minio_client._get_s3(force_backend="minio")
+                for bucket in ["cert-temp", "certificates", "job-photos"]:
+                    if not minio_client.bucket_exists(bucket):
+                        minio_client.make_bucket(bucket)
+                print("✅ MinIO buckets ready after fallback.")
+                return
+            except Exception as minio_error:
+                print(f"⚠️  WARNING: MinIO fallback also failed ({minio_error}). File upload features will be disabled.")
+                return
+        print(f"⚠️  WARNING: Storage backend unavailable ({e}). File upload features will be disabled.")

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from typing import Optional, List, Dict, Any
-from ..core.dependencies import require_staff
+from ..core.dependencies import require_staff, organization_filter
 from ..db.database import get_db
 from ..utils.serializers import serialize_mongo_doc
 
@@ -12,11 +12,13 @@ async def global_search(
     current_user: dict = Depends(require_staff)
 ):
     db = await get_db()
+    scope = organization_filter(current_user)
     results = []
 
     # 1. Search Jobs
     job_filt = {
         "is_deleted": False,
+        **scope,
         "$or": [
             {"job_number": {"$regex": query, "$options": "i"}},
             {"description": {"$regex": query, "$options": "i"}},
@@ -37,6 +39,7 @@ async def global_search(
     # 2. Search Certifications
     cert_filt = {
         "is_deleted": False,
+        **scope,
         "$or": [
             {"uuid": {"$regex": query, "$options": "i"}},
             {"type": {"$regex": query, "$options": "i"}},
@@ -59,6 +62,7 @@ async def global_search(
     # 3. Search Clients
     client_filt = {
         "is_deleted": False,
+        **scope,
         "$or": [
             {"name": {"$regex": query, "$options": "i"}},
             {"email": {"$regex": query, "$options": "i"}},
@@ -79,6 +83,7 @@ async def global_search(
     # 4. Search Manufacturers
     manu_filt = {
         "is_deleted": False,
+        **scope,
         "$or": [
             {"name": {"$regex": query, "$options": "i"}},
             {"email": {"$regex": query, "$options": "i"}},

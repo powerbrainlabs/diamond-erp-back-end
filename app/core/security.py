@@ -26,7 +26,7 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_token(subject: str, email: str, role: str, expires_delta: timedelta, token_type: str) -> dict:
+def create_token(subject: str, email: str, role: str, organization_id: str | None, expires_delta: timedelta, token_type: str) -> dict:
     now = _utcnow()
     expire = now + expires_delta
     jti = str(uuid.uuid4())
@@ -34,6 +34,7 @@ def create_token(subject: str, email: str, role: str, expires_delta: timedelta, 
         "sub": subject,
         "email": email,
         "role": role,
+        "organization_id": organization_id,
         "type": token_type,
         "jti": jti,
         "iat": int(now.timestamp()),
@@ -43,12 +44,12 @@ def create_token(subject: str, email: str, role: str, expires_delta: timedelta, 
     return {"token": token, "jti": jti, "exp": expire}
 
 
-def create_access_token(subject: str, email: str, role: str) -> dict:
-    return create_token(subject, email, role, timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES), "access")
+def create_access_token(subject: str, email: str, role: str, organization_id: str | None = None) -> dict:
+    return create_token(subject, email, role, organization_id, timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES), "access")
 
 
-def create_refresh_token(subject: str, email: str, role: str) -> dict:
-    return create_token(subject, email, role, timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS), "refresh")
+def create_refresh_token(subject: str, email: str, role: str, organization_id: str | None = None) -> dict:
+    return create_token(subject, email, role, organization_id, timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS), "refresh")
 
 async def is_token_blacklisted(jti: str) -> bool:
     db = await get_db()

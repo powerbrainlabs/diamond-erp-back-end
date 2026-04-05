@@ -1,6 +1,6 @@
-﻿# Diamond ERP Backend
+﻿# Gem Socket Backend
 
-FastAPI backend application for the Diamond ERP system.
+FastAPI backend application for the Gem Socket system.
 
 
 ## Features
@@ -23,6 +23,7 @@ This project includes a `docker-compose.yml` file that sets up:
 1. **Set up environment variables** (optional):
    Create a `.env` file:
    ```env
+   STORAGE_BACKEND=minio
    SECRET_KEY=your-secret-key-change-this-in-production-min-16-chars
    ADMIN_EMAIL=admin@diamonderp.com
    ADMIN_PASSWORD=Admin@123
@@ -92,6 +93,21 @@ docker-compose exec backend python -m scripts.seed_data
 
 3. **Set up environment variables**:
    Create a `.env` file with required variables (see Docker setup above)
+   For local development:
+   ```env
+   STORAGE_BACKEND=minio
+   MINIO_ENDPOINT=localhost:9000
+   MINIO_ACCESS_KEY=minioadmin
+   MINIO_SECRET_KEY=minioadmin
+   ```
+
+   For server / production with Cloudflare R2:
+   ```env
+   STORAGE_BACKEND=r2
+   R2_ACCOUNT_ID=your-account-id
+   R2_ACCESS_KEY_ID=your-access-key
+   R2_SECRET_ACCESS_KEY=your-secret-key
+   ```
 
 4. **Run the application**:
    ```bash

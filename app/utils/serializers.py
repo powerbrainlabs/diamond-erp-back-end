@@ -23,6 +23,11 @@ def dump_user(doc) -> dict:
     d["permissions"] = get_permissions_for_role(d.get("role", ""))
     if "features" not in d:
         d["features"] = []
+    if d.get("organization_id"):
+        d["organization_id"] = str(d["organization_id"])
+    if d.get("organization"):
+        from .organizations import serialize_organization
+        d["organization"] = serialize_organization(d["organization"])
     return d
 
 def dump_job(doc) -> dict:

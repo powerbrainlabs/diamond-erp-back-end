@@ -4,7 +4,7 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "Diamond ERP API"
+    APP_NAME: str = "gemsocket API"
     DEBUG: bool = True
 
 
@@ -39,10 +39,9 @@ class Settings(BaseSettings):
 
 
     # Storage backend: "r2" | "minio" | "auto"
-    # "r2"   → always use Cloudflare R2 (requires R2_* vars)
-    # "minio" → always use local MinIO
-    # "auto"  → use R2 if R2_ACCOUNT_ID is set, otherwise MinIO
-    STORAGE_BACKEND: str = "auto"
+    # Local/dev default should stay on MinIO.
+    # Server/prod can explicitly set STORAGE_BACKEND=r2.
+    STORAGE_BACKEND: str = "minio"
 
     # Cloudflare R2 (S3-compatible)
     R2_ACCOUNT_ID: str = ""

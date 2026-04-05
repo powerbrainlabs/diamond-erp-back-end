@@ -17,9 +17,15 @@ async def get_db():
 async def init_db():
     db = await get_db()
 
+    # Organizations indexes
+    await db.organizations.create_index([("official_name", ASCENDING)])
+    await db.organizations.create_index([("slug", ASCENDING)], unique=True)
+    await db.organizations.create_index([("status", ASCENDING)])
+
     # Users indexes
     await db.users.create_index([("email", ASCENDING)], unique=True)
     await db.users.create_index([("role", ASCENDING)])
+    await db.users.create_index([("organization_id", ASCENDING)])
 
     # Jobs indexes
     await db.jobs.create_index([("job_number", ASCENDING)], unique=True)

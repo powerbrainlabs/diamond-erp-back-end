@@ -6,6 +6,7 @@ from ..core.security import is_token_blacklisted
 from ..core.config import settings
 from ..db.database import get_db
 from ..utils.serializers import dump_user
+from ..utils.organizations import get_user_organization
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -31,6 +32,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     doc = await db.users.find_one({"_id": ObjectId(user_id), "is_active": True})
     if not doc:
         raise credentials_exception
+    doc["organization"] = await get_user_organization(db, doc)
     return dump_user(doc)
 
 async def require_super_admin(current_user: dict = Depends(get_current_user)) -> dict:
@@ -52,3 +54,11 @@ async def require_authenticated(current_user: dict = Depends(get_current_user)) 
 
 # Alias: existing routes use require_staff
 require_staff = require_authenticated
+
+
+def organization_filter(current_user: dict) -> dict:
+    if current_user["role"] == "super_admin":
+        return {}
+    if not current_user.get("organization_id"):
+        raise HTTPException(status_code=403, detail="Organization context is missing")
+    return {"organization_id": ObjectId(current_user["organization_id"])}

@@ -4,7 +4,7 @@ from datetime import datetime
 import uuid
 from bson import ObjectId
 
-from ..core.dependencies import require_admin, require_staff
+from ..core.dependencies import require_admin, require_staff, organization_filter
 from ..db.database import get_db
 from ..schemas.client import ClientCreate, ClientUpdate
 from ..utils.serializers import dump_client
@@ -13,18 +13,22 @@ router = APIRouter(prefix="/api/clients", tags=["Clients"])
 
 ALLOWED_SORTS = {"created_at": "created_at", "name": "name"}
 
+def _client_scope(current_user: dict) -> dict:
+    return organization_filter(current_user)
+
 # ✅ Create Client
 @router.post("", status_code=201)
 async def create_client(payload: ClientCreate, current_user: dict = Depends(require_staff)):
     db = await get_db()
+    scope = _client_scope(current_user)
 
     # Check duplicate (email or phone)
     if payload.email:
-        existing = await db.clients.find_one({"email": payload.email, "is_deleted": False})
+        existing = await db.clients.find_one({"email": payload.email, "is_deleted": False, **scope})
         if existing:
             raise HTTPException(status_code=409, detail="Email already exists")
     if payload.phone:
-        existing = await db.clients.find_one({"phone": payload.phone, "is_deleted": False})
+        existing = await db.clients.find_one({"phone": payload.phone, "is_deleted": False, **scope})
         if existing:
             raise HTTPException(status_code=409, detail="Phone already exists")
 
@@ -38,6 +42,7 @@ async def create_client(payload: ClientCreate, current_user: dict = Depends(requ
         "address": payload.address,
         "gst_number": payload.gst_number,
         "notes": payload.notes,
+        "organization_id": scope["organization_id"],
         "is_deleted": False,
         "created_by": {
             "user_id": current_user["id"],
@@ -63,7 +68,7 @@ async def list_clients(
     order: Literal["asc", "desc"] = "desc",
 ):
     db = await get_db()
-    filt = {"is_deleted": False}
+    filt = {"is_deleted": False, **_client_scope(current_user)}
 
     if search:
         filt["$or"] = [
@@ -97,7 +102,7 @@ async def list_clients(
 async def client_stats(current_user: dict = Depends(require_staff)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **_client_scope(current_user)}},
         {"$group": {"_id": None, "total_clients": {"$count": {}}}},
     ]
     res = await db.clients.aggregate(pipeline).to_list(1)
@@ -109,7 +114,7 @@ async def client_stats(current_user: dict = Depends(require_staff)):
 @router.get("/{uuid}")
 async def get_client(uuid: str, current_user: dict = Depends(require_staff)):
     db = await get_db()
-    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False, **_client_scope(current_user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Client not found")
     return dump_client(doc)
@@ -119,7 +124,7 @@ async def get_client(uuid: str, current_user: dict = Depends(require_staff)):
 @router.put("/{uuid}")
 async def update_client(uuid: str, payload: ClientUpdate, current_user: dict = Depends(require_staff)):
     db = await get_db()
-    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False, **_client_scope(current_user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -139,7 +144,7 @@ async def update_client(uuid: str, payload: ClientUpdate, current_user: dict = D
 @router.delete("/{uuid}")
 async def delete_client(uuid: str, current_user: dict = Depends(require_admin)):
     db = await get_db()
-    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False, **_client_scope(current_user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Client not found")
     await db.clients.update_one(

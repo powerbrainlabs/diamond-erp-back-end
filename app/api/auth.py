@@ -11,6 +11,7 @@ from ..core.security import hash_password, verify_password, create_access_token,
 from ..core.config import settings
 from ..db.database import get_db
 from ..utils.serializers import dump_user
+from ..utils.organizations import get_user_organization
 from ..utils.action_logger import auto_log_action
 from fastapi import Request
 
@@ -29,6 +30,7 @@ async def register_user(payload: RegisterRequest,
         "password": hash_password(payload.password),
         "name": payload.name,
         "role": payload.role,
+        "organization_id": None,
         "is_active": True,
         "created_at": now,
         "updated_at": now,
@@ -50,8 +52,10 @@ async def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = 
     user = await db.users.find_one({"email": normalized})
     if not user or not verify_password(form.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    access = create_access_token(str(user["_id"]), user["email"], user["role"])
-    refresh = create_refresh_token(str(user["_id"]), user["email"], user["role"])
+    org_id = str(user["organization_id"]) if user.get("organization_id") else None
+    access = create_access_token(str(user["_id"]), user["email"], user["role"], org_id)
+    refresh = create_refresh_token(str(user["_id"]), user["email"], user["role"], org_id)
+    user["organization"] = await get_user_organization(db, user)
 
     try:
         from ..utils.action_logger import log_action
@@ -80,13 +84,14 @@ async def refresh_token(payload: RefreshRequest):
         raise HTTPException(status_code=400, detail="Invalid refresh token")
     if data.get("type") != "refresh":
         raise HTTPException(status_code=400, detail="Invalid token type")
-    access = create_access_token(data["sub"], data["email"], data["role"])
-    refresh = create_refresh_token(data["sub"], data["email"], data["role"])
+    access = create_access_token(data["sub"], data["email"], data["role"], data.get("organization_id"))
+    refresh = create_refresh_token(data["sub"], data["email"], data["role"], data.get("organization_id"))
 
     db = await get_db()
     user = await db.users.find_one({"_id": ObjectId(data["sub"])})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    user["organization"] = await get_user_organization(db, user)
     return TokenResponse(
         access_token=access["token"],
         refresh_token=refresh["token"],
@@ -109,6 +114,7 @@ async def update_me(payload: MeUpdate, current_user: dict = Depends(get_current_
     updates["updated_at"] = datetime.utcnow()
     await db.users.update_one({"_id": ObjectId(current_user["id"])}, {"$set": updates})
     doc = await db.users.find_one({"_id": ObjectId(current_user["id"])})
+    doc["organization"] = await get_user_organization(db, doc)
     return dump_user(doc)
 
 @router.post("/change-password")

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from datetime import datetime, timedelta
-from ..core.dependencies import require_staff
+from ..core.dependencies import require_staff, organization_filter
 from ..db.database import get_db
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
@@ -23,12 +23,13 @@ def _get_period_start(time_period: str) -> datetime:
 @router.get("/stats")
 async def dashboard_stats(time_period: str = "daily", current_user: dict = Depends(require_staff)):
     db = await get_db()
+    scope = organization_filter(current_user)
     period_start = _get_period_start(time_period)
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
     # ---- Jobs ----
     jobs_pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **scope}},
         {"$facet": {
             "active": [
                 {"$match": {"status": {"$ne": "completed"}}},
@@ -65,7 +66,7 @@ async def dashboard_stats(time_period: str = "daily", current_user: dict = Depen
 
     # ---- Certificates ----
     certs_pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **scope}},
         {"$facet": {
             "total": [{"$count": "count"}],
             "created_in_period": [
@@ -87,7 +88,7 @@ async def dashboard_stats(time_period: str = "daily", current_user: dict = Depen
 
     # ---- QC Reports ----
     qc_pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **scope}},
         {"$facet": {
             "total": [{"$count": "count"}],
             "created_in_period": [
@@ -104,8 +105,8 @@ async def dashboard_stats(time_period: str = "daily", current_user: dict = Depen
     qa = qc_res[0] if qc_res else {}
 
     # ---- Clients & Manufacturers ----
-    total_clients = await db.clients.count_documents({"is_deleted": False})
-    total_manufacturers = await db.manufacturers.count_documents({"is_deleted": False})
+    total_clients = await db.clients.count_documents({"is_deleted": False, **scope})
+    total_manufacturers = await db.manufacturers.count_documents({"is_deleted": False, **scope})
 
     return {
         "jobs": {

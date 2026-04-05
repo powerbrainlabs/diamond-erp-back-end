@@ -5,7 +5,7 @@ from bson import ObjectId
 import uuid
 
 from ..schemas.job import JobCreate, JobUpdate, JobStatusPatch
-from ..core.dependencies import require_admin, require_staff
+from ..core.dependencies import require_admin, require_staff, organization_filter
 from ..db.database import get_db
 from ..utils.job_number import next_job_number
 from ..utils.serializers import dump_job
@@ -18,18 +18,22 @@ ALLOWED_SORTS = {
     "job_number": "job_number"
 }
 
+def _job_scope(current_user: dict) -> dict:
+    return organization_filter(current_user)
+
 # ✅ Create Job
 @router.post("", status_code=201)
 async def create_job(payload: JobCreate, current_user: dict = Depends(require_staff)):
     db = await get_db()
+    scope = _job_scope(current_user)
 
     # Validate client
-    client = await db.clients.find_one({"uuid": payload.client_id})
+    client = await db.clients.find_one({"uuid": payload.client_id, **scope})
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
     now = datetime.utcnow()
-    job_no = await next_job_number()
+    job_no = await next_job_number(current_user.get("organization_id"))
 
     # Use received_datetime if provided, otherwise use received_date, otherwise use now
     received = payload.received_datetime or payload.received_date or now
@@ -63,6 +67,7 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
             "name": current_user["name"],
             "email": current_user["email"],
         },
+        "organization_id": scope["organization_id"],
         "is_deleted": False,
         "created_at": now,
         "updated_at": now,
@@ -81,6 +86,7 @@ async def upcoming_deliveries(days: int = Query(7), current_user: dict = Depends
     future = now + timedelta(days=days)
     
     filt = {
+        **_job_scope(current_user),
         "is_deleted": False,
         "status": {"$ne": "completed"},
         "expected_delivery_date": {"$gte": now, "$lte": future}
@@ -102,7 +108,7 @@ async def list_jobs(
     order: Literal["asc", "desc"] = "desc",
 ):
     db = await get_db()
-    filt = {"is_deleted": False}
+    filt = {"is_deleted": False, **_job_scope(current_user)}
     if status:
         filt["status"] = status
     if job_type:
@@ -131,7 +137,7 @@ async def list_jobs(
 @router.get("get-job-details/{uuid}")
 async def get_job(uuid: str, current_user: dict = Depends(require_staff)):
     db = await get_db()
-    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False, **_job_scope(current_user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
     return dump_job(doc)
@@ -140,7 +146,7 @@ async def get_job(uuid: str, current_user: dict = Depends(require_staff)):
 @router.put("/{uuid}")
 async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends(require_staff)):
     db = await get_db()
-    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False, **_job_scope(current_user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
 
@@ -171,7 +177,7 @@ async def update_stage_progress(
     current_user: dict = Depends(require_staff)
 ):
     db = await get_db()
-    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False, **_job_scope(current_user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
 
@@ -227,7 +233,7 @@ async def update_job_status(
     current_user: dict = Depends(require_staff)
 ):
     db = await get_db()
-    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False, **_job_scope(current_user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
 
@@ -242,7 +248,7 @@ async def update_job_status(
 @router.delete("/{uuid}")
 async def delete_job(uuid: str, current_user: dict = Depends(require_admin)):
     db = await get_db()
-    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False, **_job_scope(current_user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
     await db.jobs.update_one(
@@ -256,7 +262,7 @@ async def delete_job(uuid: str, current_user: dict = Depends(require_admin)):
 async def job_stats(current_user: dict = Depends(require_staff)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **_job_scope(current_user)}},
         {"$facet": {
             "total": [{"$count": "count"}],
             "by_status": [{"$group": {"_id": "$status", "count": {"$count": {}}}}],
@@ -283,7 +289,7 @@ async def job_stats(current_user: dict = Depends(require_staff)):
 async def job_stats_daily(current_user: dict = Depends(require_staff)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **_job_scope(current_user)}},
         {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$count": {}}}},
         {"$sort": {"_id": 1}},
     ]
@@ -300,7 +306,8 @@ async def download_jobs_pdf(job_uuids: List[str], current_user: dict = Depends(r
     db = await get_db()
     
     # 1. Fetch Jobs
-    cursor = db.jobs.find({"uuid": {"$in": job_uuids}, "is_deleted": False})
+    scope = _job_scope(current_user)
+    cursor = db.jobs.find({"uuid": {"$in": job_uuids}, "is_deleted": False, **scope})
     jobs = [dump_job(doc) async for doc in cursor]
     
     if not jobs:
@@ -310,7 +317,7 @@ async def download_jobs_pdf(job_uuids: List[str], current_user: dict = Depends(r
     client_ids = {j["client_id"] for j in jobs if j.get("client_id")}
     manufacturer_ids = {j["manufacturer_id"] for j in jobs if j.get("manufacturer_id")}
     
-    clients_cursor = db.clients.find({"uuid": {"$in": list(client_ids)}})
+    clients_cursor = db.clients.find({"uuid": {"$in": list(client_ids)}, **scope})
     clients_map = {doc["uuid"]: doc async for doc in clients_cursor}
     
     # Manufacturers might not exist in a separate collection based on schema context, 
@@ -336,12 +343,8 @@ async def download_jobs_pdf(job_uuids: List[str], current_user: dict = Depends(r
             "manufacturer": manufacturers_map.get(job.get("manufacturer_id"))
         })
         
-    # 4. Generate PDF
-    # Path to logo - assuming we are in app/api/jobs.py, go up to root
-    # c:\go\MyProjects\REACT\PBL\diamond-erp\diamond-erp-back-end\app\api
-    # Logo is in frontend: ../diamond-erp-front-end/src/assets/gac_logo.png
-    # Relative path from backend root (where main.py runs): ../diamond-erp-front-end/src/assets/gac_logo.png
-    logo_path = "../diamond-erp-front-end/src/assets/gac_logo.png"
+    # 4. Generate PDF using the extracted raster fallback for ReportLab
+    logo_path = "../diamond-erp-front-end/public/gemlogo.png"
     
     pdf_buffer = generate_jobs_pdf(print_data, logo_path)
     

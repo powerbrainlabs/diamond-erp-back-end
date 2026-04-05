@@ -16,6 +16,7 @@ async def log_action(
     details: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     ip_address: Optional[str] = None,
+    organization_id: Optional[str] = None,
 ):
     """
     Log a user action to the action_history collection
@@ -41,6 +42,7 @@ async def log_action(
         
         action_doc = {
             "user_id": user_id,
+            "organization_id": ObjectId(organization_id) if organization_id else None,
             "action_type": action_type,
             "resource_type": resource_type,
             "resource_id": resource_id,
@@ -60,6 +62,7 @@ class ActionLogger:
     Dependency-injected action logger that automatically captures user context
     """
     def __init__(self, current_user: dict, request: Optional[Request] = None):
+        self.current_user = current_user
         self.user_id = current_user.get("id")
         self.user_name = current_user.get("name", "Unknown")
         self.ip_address = request.client.host if request and request.client else None
@@ -81,6 +84,7 @@ class ActionLogger:
             details=details,
             metadata=metadata,
             ip_address=self.ip_address,
+            organization_id=self.current_user.get("organization_id"),
         )
 
 async def auto_log_action(
@@ -180,6 +184,7 @@ async def auto_log_action(
                 "user_email": current_user.get("email"),
             },
             ip_address=request.client.host if request.client else None,
+            organization_id=current_user.get("organization_id"),
         )
     
     # Return None so it doesn't affect route function

@@ -5,10 +5,14 @@ import uuid
 
 from pydantic import BaseModel
 from ..db.database import get_db
-from ..core.dependencies import require_admin
+from ..core.dependencies import require_admin, organization_filter
 from ..utils.serializers import serialize_mongo_doc
 
 router = APIRouter(prefix="/api/manufacturers", tags=["Manufacturers"])
+
+
+def _manufacturer_scope(current_user: dict) -> dict:
+    return organization_filter(current_user)
 
 
 class ManufacturerCreate(BaseModel):
@@ -36,6 +40,7 @@ async def create_manufacturer(
     current_user: dict = Depends(require_admin)
 ):
     db = await get_db()
+    scope = _manufacturer_scope(current_user)
 
     doc = {
         "uuid": str(uuid.uuid4()),
@@ -45,6 +50,7 @@ async def create_manufacturer(
         "phone": payload.phone,
         "address": payload.address,
         "notes": payload.notes,
+        "organization_id": scope["organization_id"],
         "is_deleted": False,
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow(),
@@ -57,6 +63,7 @@ async def create_manufacturer(
 # ✅ List Manufacturers
 @router.get("")
 async def list_manufacturers(
+    current_user: dict = Depends(require_admin),
     search: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
@@ -67,7 +74,7 @@ async def list_manufacturers(
     Fetch paginated manufacturers with optional search.
     """
     db = await get_db()
-    filt = {"is_deleted": False}
+    filt = {"is_deleted": False, **_manufacturer_scope(current_user)}
 
     if search:
         filt["$or"] = [
@@ -105,19 +112,20 @@ async def list_manufacturers(
 
 # ✅ Get Stats (MUST be before /{uuid} to avoid route conflict)
 @router.get("/stats")
-async def manufacturer_stats():
+async def manufacturer_stats(current_user: dict = Depends(require_admin)):
     db = await get_db()
-    total = await db.manufacturers.count_documents({"is_deleted": False})
+    total = await db.manufacturers.count_documents({"is_deleted": False, **_manufacturer_scope(current_user)})
     return {"total": total}
 
 
 # ✅ Get Single Manufacturer
 @router.get("/{uuid}")
-async def get_manufacturer(uuid: str):
+async def get_manufacturer(uuid: str, current_user: dict = Depends(require_admin)):
     db = await get_db()
     doc = await db.manufacturers.find_one({
         "uuid": uuid,
-        "is_deleted": False
+        "is_deleted": False,
+        **_manufacturer_scope(current_user),
     })
 
     if not doc:
@@ -134,9 +142,11 @@ async def update_manufacturer(
     current_user: dict = Depends(require_admin)
 ):
     db = await get_db()
+    scope = _manufacturer_scope(current_user)
     doc = await db.manufacturers.find_one({
         "uuid": uuid,
-        "is_deleted": False
+        "is_deleted": False,
+        **scope,
     })
 
     if not doc:
@@ -149,9 +159,9 @@ async def update_manufacturer(
             updates[field] = val
 
     updates["updated_at"] = datetime.utcnow()
-    await db.manufacturers.update_one({"uuid": uuid}, {"$set": updates})
+    await db.manufacturers.update_one({"uuid": uuid, **scope}, {"$set": updates})
 
-    fresh = await db.manufacturers.find_one({"uuid": uuid})
+    fresh = await db.manufacturers.find_one({"uuid": uuid, **scope})
     return serialize_mongo_doc(fresh)
 
 
@@ -162,16 +172,18 @@ async def delete_manufacturer(
     current_user: dict = Depends(require_admin)
 ):
     db = await get_db()
+    scope = _manufacturer_scope(current_user)
     doc = await db.manufacturers.find_one({
         "uuid": uuid,
-        "is_deleted": False
+        "is_deleted": False,
+        **scope,
     })
 
     if not doc:
         raise HTTPException(status_code=404, detail="Manufacturer not found")
 
     await db.manufacturers.update_one(
-        {"uuid": uuid},
+        {"uuid": uuid, **scope},
         {
             "$set": {
                 "is_deleted": True,

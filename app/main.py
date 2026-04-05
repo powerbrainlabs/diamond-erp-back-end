@@ -21,9 +21,11 @@ from .api.dynamic_categories import router as dynamic_categories_router
 from .api.staff import router as staff_router
 from .api.search import router as search_router
 from .api.photos import router as photos_router
+from .api.organizations import router as organizations_router
 
 from .core.security import hash_password
 from .core.minio_client import ensure_buckets
+from .utils.organizations import ensure_default_organization
 
 app = FastAPI(title=settings.APP_NAME)
 
@@ -42,6 +44,7 @@ async def startup_event():
     
     # Initialize database
     db = await init_db()
+    default_org = await ensure_default_organization(db, settings)
 
     # Migration: rename legacy "staff" role to "user"
     await db.users.update_many({"role": "staff"}, {"$set": {"role": "user"}})
@@ -55,6 +58,7 @@ async def startup_event():
             "password": hash_password(settings.SUPER_ADMIN_PASSWORD),
             "name": settings.SUPER_ADMIN_NAME,
             "role": "super_admin",
+            "organization_id": default_org["_id"],
             "is_active": True,
             "created_at": now,
             "updated_at": now,
@@ -69,6 +73,7 @@ async def startup_event():
             "password": hash_password(settings.ADMIN_PASSWORD),
             "name": settings.ADMIN_NAME,
             "role": "admin",
+            "organization_id": default_org["_id"],
             "is_active": True,
             "created_at": now,
             "updated_at": now,
@@ -104,6 +109,7 @@ app.include_router(super_admin_categories_router)
 app.include_router(certificate_types_router)
 app.include_router(dynamic_categories_router)
 app.include_router(photos_router)
+app.include_router(organizations_router)
 
 
 @app.get("/")

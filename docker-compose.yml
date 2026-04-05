@@ -38,6 +38,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_USE_TLS: "false"
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-minio}
       # Public host for presigned URLs (accessible from browser via nginx proxy - HTTPS)
       MINIO_PUBLIC_HOST: ${MINIO_PUBLIC_HOST:-staging.gac.powerbrainlabs.com}
       
@@ -63,7 +64,7 @@ services:
       REMOVE_BG_API_URL: https://api.remove.bg/v1.0/removebg
       
       # App settings
-      APP_NAME: Diamond ERP API
+      APP_NAME: gemsocket API
       DEBUG: "true"
     networks:
       - erp-backend-network
@@ -72,4 +73,3 @@ networks:
   erp-backend-network:
     name: erp-backend-network
     driver: bridge
-
