@@ -1,15 +1,20 @@
 from datetime import datetime
+import io
 import re
+import uuid
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 
 from ..core.dependencies import require_admin, require_super_admin
 from ..core.security import hash_password
+from ..core.minio_client import minio_client
 from ..db.database import get_db
 from ..schemas.organization import OrganizationCreate, OrganizationUpdate
 from ..utils.organizations import normalize_org_id, serialize_organization
 from ..utils.serializers import dump_user
+from ..utils.seed_schemas import seed_default_attributes, seed_default_certificate_types, seed_default_category_schemas
+from .files import compress_image
 
 router = APIRouter(prefix="/api/organizations", tags=["Organizations"])
 
@@ -17,6 +22,51 @@ router = APIRouter(prefix="/api/organizations", tags=["Organizations"])
 def slugify(name: str) -> str:
     base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return base or "organization"
+
+
+@router.post("/upload-logo")
+async def upload_organization_logo(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_super_admin),
+):
+    allowed_types = {
+        "image/svg+xml": ".svg",
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+    }
+    content_type = (file.content_type or "").lower()
+    filename = file.filename or "organization-logo"
+    filename_lower = filename.lower()
+
+    if content_type not in allowed_types and not filename_lower.endswith((".svg", ".png", ".jpg", ".jpeg")):
+        raise HTTPException(status_code=400, detail="Only SVG, PNG, JPG, and JPEG logo files are allowed")
+
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded logo file is empty")
+
+    object_name = f"organization-logos/{uuid.uuid4()}_{re.sub(r'[^a-zA-Z0-9._-]+', '_', filename)}"
+
+    if content_type == "image/svg+xml" or filename_lower.endswith(".svg"):
+        upload_bytes = raw_bytes
+        upload_content_type = "image/svg+xml"
+    else:
+        upload_bytes, upload_content_type = compress_image(raw_bytes, filename)
+
+    minio_client.put_object(
+        bucket_name="certificates",
+        object_name=object_name,
+        data=io.BytesIO(upload_bytes),
+        length=len(upload_bytes),
+        content_type=upload_content_type,
+    )
+
+    return {
+        "logo_url": f"/api/files/proxy/certificates/{object_name}",
+        "content_type": upload_content_type,
+        "filename": filename,
+    }
 
 
 @router.get("")
@@ -80,6 +130,10 @@ async def create_organization(payload: OrganizationCreate, current_user: dict = 
         "updated_at": now,
     }
     admin_res = await db.users.insert_one(admin_doc)
+
+    await seed_default_attributes(db, organization_id)
+    await seed_default_certificate_types(db, organization_id)
+    await seed_default_category_schemas(db, organization_id)
 
     org = await db.organizations.find_one({"_id": organization_id})
     admin = await db.users.find_one({"_id": admin_res.inserted_id})

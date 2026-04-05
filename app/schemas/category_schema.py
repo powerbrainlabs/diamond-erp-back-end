@@ -54,12 +54,14 @@ class CategorySchemaCreate(BaseModel):
     name: str = Field(min_length=2)
     group: str = Field(min_length=1)
     description: Optional[str] = None
+    description_template: Optional[str] = None
     fields: List[FieldDefinition] = []
 
 
 class CategorySchemaUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    description_template: Optional[str] = None
     is_active: Optional[bool] = None
 
 

@@ -62,3 +62,9 @@ def organization_filter(current_user: dict) -> dict:
     if not current_user.get("organization_id"):
         raise HTTPException(status_code=403, detail="Organization context is missing")
     return {"organization_id": ObjectId(current_user["organization_id"])}
+
+
+def require_organization_context(current_user: dict) -> dict:
+    if not current_user.get("organization_id"):
+        raise HTTPException(status_code=403, detail="Organization context is required")
+    return current_user

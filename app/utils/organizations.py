@@ -30,35 +30,48 @@ def serialize_organization(doc: dict | None) -> dict | None:
 async def ensure_default_organization(db, settings) -> dict:
     now = datetime.utcnow()
     org = await db.organizations.find_one({"slug": "gac"})
+    default_fields = {
+        "official_name": "GAC",
+        "display_name": "GAC",
+        "short_name": "GAC",
+        "slug": "gac",
+        "logo_url": "/gemlogo.svg",
+        "primary_email": settings.ADMIN_EMAIL,
+        "primary_phone": "+91 98765 43210",
+        "website": "https://staging.gac.powerbrainlabs.com",
+        "tax_id": "GSTIN-PENDING",
+        "address_line_1": "Power Brain Labs",
+        "address_line_2": "Gem Certification Division",
+        "city": "Kolkata",
+        "state": "West Bengal",
+        "country": "India",
+        "postal_code": "700001",
+        "certificate_footer_text": "Certified by GAC - Gem Socket Administration",
+        "report_signature_name": "Authorized Signatory",
+        "report_signature_title": "GAC Administration",
+        "default_timezone": "Asia/Kolkata",
+        "default_currency": "INR",
+        "status": "active",
+    }
 
     if not org:
         doc = {
-            "official_name": "GAC",
-            "display_name": "GAC",
-            "short_name": "GAC",
-            "slug": "gac",
-            "logo_url": "",
-            "primary_email": settings.ADMIN_EMAIL,
-            "primary_phone": "",
-            "website": "",
-            "tax_id": "",
-            "address_line_1": "",
-            "address_line_2": "",
-            "city": "",
-            "state": "",
-            "country": "India",
-            "postal_code": "",
-            "certificate_footer_text": "",
-            "report_signature_name": "",
-            "report_signature_title": "",
-            "default_timezone": "Asia/Kolkata",
-            "default_currency": "INR",
-            "status": "active",
+            **default_fields,
             "created_at": now,
             "updated_at": now,
         }
         res = await db.organizations.insert_one(doc)
         org = await db.organizations.find_one({"_id": res.inserted_id})
+    else:
+        updates = {}
+        for key, value in default_fields.items():
+            if not org.get(key):
+                updates[key] = value
+
+        if updates:
+            updates["updated_at"] = now
+            await db.organizations.update_one({"_id": org["_id"]}, {"$set": updates})
+            org = await db.organizations.find_one({"_id": org["_id"]})
 
     default_org_id = org["_id"]
 

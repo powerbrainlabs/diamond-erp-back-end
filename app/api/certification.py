@@ -96,7 +96,7 @@ async def create_certification(
     # Validate fields against category schema if provided
     if payload.category_id:
         schema = await db.category_schemas.find_one({
-            "uuid": payload.category_id, "is_deleted": False, "is_active": True,
+            "uuid": payload.category_id, "is_deleted": False, "is_active": True, **scope,
         })
         if not schema:
             raise HTTPException(status_code=400, detail="Invalid category schema")
@@ -191,8 +191,9 @@ async def create_certification(
 
 # 🧱 Bulk Create
 @router.post("/bulk", status_code=201)
-async def create_bulk_certifications(payload: List[Dict[str, Any]]):
+async def create_bulk_certifications(payload: List[Dict[str, Any]], current_user: dict = Depends(require_staff)):
     db = await get_db()
+    scope = _cert_scope(current_user)
     now = datetime.utcnow()
     inserted_docs = []
     promoted_files = []
@@ -200,7 +201,7 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
     try:
         for cert in payload:
             # Validate type & client
-            client = await db.clients.find_one({"uuid": cert["client_id"], "is_deleted": False})
+            client = await db.clients.find_one({"uuid": cert["client_id"], "is_deleted": False, **scope})
             if not client:
                 raise HTTPException(status_code=404, detail=f"Client {cert['client_id']} not found")
 
@@ -213,7 +214,7 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
             if rear_logo_url: promoted_files.append(("certificates", rear_logo_url.split("/", 1)[1]))
 
             # Generate certificate number for each certificate
-            certificate_number = await next_certificate_number()
+            certificate_number = await next_certificate_number(current_user.get("organization_id"))
 
             inserted_docs.append({
                 "uuid": str(uuid.uuid4()),
@@ -224,6 +225,7 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
                 "photo_url": photo_url,
                 "brand_logo_url": logo_url,
                 "rear_brand_logo_url": rear_logo_url,
+                "organization_id": scope["organization_id"],
                 "is_deleted": False,
                 "is_published": False,
                 "published_at": None,
@@ -402,7 +404,7 @@ async def list_certifications(
     # Search on certificate_number, type, fields, and client name
     if search:
         matching_clients = await db.clients.find(
-            {"name": {"$regex": search, "$options": "i"}, "is_deleted": False},
+            {"name": {"$regex": search, "$options": "i"}, "is_deleted": False, **scope},
             {"uuid": 1}
         ).to_list(length=200)
         matching_client_ids = [c["uuid"] for c in matching_clients]
@@ -438,7 +440,8 @@ async def list_certifications(
         if doc.get("category_id"):
             schema = await db.category_schemas.find_one({
                 "uuid": doc["category_id"],
-                "is_deleted": False
+                "is_deleted": False,
+                **scope,
             })
             if schema:
                 doc["schema"] = {
@@ -478,12 +481,14 @@ async def list_certifications(
 # ✅ Form Schema: returns category schema fields for dynamic form rendering
 # Dynamically populates dropdown options from the attributes collection
 @router.get("/form-schema/{category_uuid}")
-async def get_form_schema(category_uuid: str):
+async def get_form_schema(category_uuid: str, current_user: dict = Depends(require_staff)):
     db = await get_db()
+    scope = _cert_scope(current_user)
     schema = await db.category_schemas.find_one({
         "uuid": category_uuid,
         "is_deleted": False,
         "is_active": True,
+        **scope,
     })
     if not schema:
         raise HTTPException(status_code=404, detail="Category schema not found")
@@ -501,6 +506,7 @@ async def get_form_schema(category_uuid: str):
             field_type_key = field.get("field_name")
             # Fetch attributes for this group/field type
             cursor = db.attributes.find({
+                "organization_id": scope["organization_id"],
                 "group": group,
                 "type": field_type_key,
                 "is_deleted": False
@@ -530,9 +536,9 @@ async def get_form_schema(category_uuid: str):
 
 # ✅ Active category schemas list (for certificate form dropdown)
 @router.get("/available-schemas")
-async def list_available_schemas(group: Optional[str] = None):
+async def list_available_schemas(group: Optional[str] = None, current_user: dict = Depends(require_staff)):
     db = await get_db()
-    filt = {"is_deleted": False, "is_active": True}
+    filt = {"is_deleted": False, "is_active": True, **_cert_scope(current_user)}
     if group:
         filt["group"] = group
     cursor = db.category_schemas.find(filt).sort([("name", 1)])

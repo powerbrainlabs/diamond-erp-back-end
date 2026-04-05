@@ -40,12 +40,16 @@ async def init_db():
 
     # Category schemas indexes
     await db.category_schemas.create_index([("uuid", ASCENDING)], unique=True)
-    await db.category_schemas.create_index([("group", ASCENDING)])
+    await db.category_schemas.create_index([("organization_id", ASCENDING), ("group", ASCENDING)])
     await db.category_schemas.create_index([("is_deleted", ASCENDING), ("is_active", ASCENDING)])
 
     # Certificate types indexes
     await db.certificate_types.create_index([("uuid", ASCENDING)], unique=True)
-    await db.certificate_types.create_index([("slug", ASCENDING)], unique=True)
+    try:
+        await db.certificate_types.drop_index("slug_1")
+    except Exception:
+        pass
+    await db.certificate_types.create_index([("organization_id", ASCENDING), ("slug", ASCENDING)], unique=True)
     await db.certificate_types.create_index([("is_deleted", ASCENDING), ("is_active", ASCENDING)])
 
     # Certifications indexes
@@ -64,7 +68,7 @@ async def init_db():
 
     # Attributes (for certificate field dropdowns)
     await db.attributes.create_index([("uuid", ASCENDING)], unique=True)
-    await db.attributes.create_index([("group", ASCENDING), ("type", ASCENDING)])
+    await db.attributes.create_index([("organization_id", ASCENDING), ("group", ASCENDING), ("type", ASCENDING)])
     await db.attributes.create_index([("is_deleted", ASCENDING)])
 
     return db

@@ -11,8 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from datetime import datetime
 import uuid as uuid_lib
+from bson import ObjectId
 
-from ..core.dependencies import require_super_admin, require_admin, require_staff
+from ..core.dependencies import require_admin, require_staff, require_organization_context
 from ..db.database import get_db
 from ..utils.serializers import serialize_mongo_doc
 
@@ -36,6 +37,11 @@ def serialize_attribute(doc: dict) -> dict:
     })
 
 
+def _engine_scope(current_user: dict) -> dict:
+    current_user = require_organization_context(current_user)
+    return {"organization_id": ObjectId(current_user["organization_id"])}
+
+
 # ── Get all active certificate types (for tabs) ─────────────────────
 @router.get("/types")
 async def list_certificate_types(
@@ -43,9 +49,11 @@ async def list_certificate_types(
 ):
     """List all active certificate types for category management tabs."""
     db = await get_db()
+    scope = _engine_scope(current_user)
     cursor = db.certificate_types.find({
         "is_active": True,
-        "is_deleted": False
+        "is_deleted": False,
+        **scope,
     }).sort([("display_order", 1), ("name", 1)])
     
     types = []
@@ -68,12 +76,14 @@ async def get_type_fields(
 ):
     """Get manageable fields (dropdown, radio, creatable_select) for a certificate type."""
     db = await get_db()
+    scope = _engine_scope(current_user)
     
     # Verify type exists
     cert_type = await db.certificate_types.find_one({
         "slug": type_slug,
         "is_active": True,
-        "is_deleted": False
+        "is_deleted": False,
+        **scope,
     })
     if not cert_type:
         raise HTTPException(status_code=404, detail=f"Certificate type '{type_slug}' not found")
@@ -82,7 +92,8 @@ async def get_type_fields(
     schema = await db.category_schemas.find_one({
         "group": type_slug,
         "is_active": True,
-        "is_deleted": False
+        "is_deleted": False,
+        **scope,
     })
     
     if not schema:
@@ -121,8 +132,9 @@ async def list_attributes(
 ):
     """List all attributes for a given group and field type."""
     db = await get_db()
+    scope = _engine_scope(current_user)
     
-    filt = {"group": group, "type": field_type, "is_deleted": False}
+    filt = {"group": group, "type": field_type, "is_deleted": False, **scope}
     if search:
         filt["name"] = {"$regex": search, "$options": "i"}
     
@@ -142,11 +154,13 @@ async def create_attribute(
 ):
     """Create a new attribute. Admin or Super Admin."""
     db = await get_db()
+    scope = _engine_scope(current_user)
     
     # Validate group exists as a certificate type
     cert_type = await db.certificate_types.find_one({
         "slug": group,
-        "is_deleted": False
+        "is_deleted": False,
+        **scope,
     })
     if not cert_type:
         raise HTTPException(status_code=400, detail=f"Invalid certificate type: {group}")
@@ -161,7 +175,8 @@ async def create_attribute(
         "group": group,
         "type": field_type,
         "name": {"$regex": f"^{name}$", "$options": "i"},
-        "is_deleted": False
+        "is_deleted": False,
+        **scope,
     })
     if existing:
         raise HTTPException(status_code=409, detail="An attribute with this name already exists")
@@ -169,6 +184,7 @@ async def create_attribute(
     now = datetime.utcnow()
     doc = {
         "uuid": str(uuid_lib.uuid4()),
+        **scope,
         "group": group,
         "type": field_type,
         "name": name,
@@ -200,8 +216,9 @@ async def update_attribute(
 ):
     """Update an attribute. Admin or Super Admin."""
     db = await get_db()
+    scope = _engine_scope(current_user)
     
-    doc = await db.attributes.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.attributes.find_one({"uuid": uuid, "is_deleted": False, **scope})
     if not doc:
         raise HTTPException(status_code=404, detail="Attribute not found")
     
@@ -215,7 +232,8 @@ async def update_attribute(
         "type": doc["type"],
         "name": {"$regex": f"^{name}$", "$options": "i"},
         "uuid": {"$ne": uuid},
-        "is_deleted": False
+        "is_deleted": False,
+        **scope,
     })
     if existing:
         raise HTTPException(status_code=409, detail="An attribute with this name already exists")
@@ -230,9 +248,9 @@ async def update_attribute(
         if field in payload:
             update_data[field] = payload[field]
     
-    await db.attributes.update_one({"uuid": uuid}, {"$set": update_data})
+    await db.attributes.update_one({"uuid": uuid, **scope}, {"$set": update_data})
     
-    updated = await db.attributes.find_one({"uuid": uuid})
+    updated = await db.attributes.find_one({"uuid": uuid, **scope})
     return serialize_attribute(updated)
 
 
@@ -244,13 +262,14 @@ async def delete_attribute(
 ):
     """Soft delete an attribute. Admin or Super Admin."""
     db = await get_db()
+    scope = _engine_scope(current_user)
     
-    doc = await db.attributes.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.attributes.find_one({"uuid": uuid, "is_deleted": False, **scope})
     if not doc:
         raise HTTPException(status_code=404, detail="Attribute not found")
     
     await db.attributes.update_one(
-        {"uuid": uuid},
+        {"uuid": uuid, **scope},
         {"$set": {"is_deleted": True, "updated_at": datetime.utcnow()}}
     )
     

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from datetime import datetime
 import uuid
+from bson import ObjectId
 
-from ..core.dependencies import require_super_admin
+from ..core.dependencies import require_staff, require_super_admin
 from ..db.database import get_db
 from ..schemas.certificate_type import (
     CertificateTypeCreate,
@@ -34,12 +35,26 @@ def serialize_type(doc: dict) -> dict:
     })
 
 
+def _engine_scope(current_user: dict, organization_id: str | None = None) -> dict:
+    if current_user["role"] == "super_admin":
+        if not organization_id:
+            raise HTTPException(status_code=400, detail="organization_id is required for super admin certificate engine access")
+        return {"organization_id": ObjectId(organization_id)}
+    if not current_user.get("organization_id"):
+        raise HTTPException(status_code=403, detail="Organization context is required")
+    return {"organization_id": ObjectId(current_user["organization_id"])}
+
+
 # ── Public: list active types (for dropdowns) ───────────────────────
 @router.get("")
-async def list_certificate_types():
+async def list_certificate_types(
+    current_user: dict = Depends(require_staff),
+    organization_id: str | None = Query(default=None),
+):
     db = await get_db()
+    scope = _engine_scope(current_user, organization_id)
     cursor = (
-        db.certificate_types.find({"is_deleted": False, "is_active": True})
+        db.certificate_types.find({"is_deleted": False, "is_active": True, **scope})
         .sort([("display_order", 1)])
     )
     return {"data": [serialize_type(doc) async for doc in cursor]}
@@ -49,10 +64,12 @@ async def list_certificate_types():
 @router.get("/all")
 async def list_all_certificate_types(
     current_user: dict = Depends(require_super_admin),
+    organization_id: str | None = Query(default=None),
 ):
     db = await get_db()
+    scope = _engine_scope(current_user, organization_id)
     cursor = (
-        db.certificate_types.find({"is_deleted": False})
+        db.certificate_types.find({"is_deleted": False, **scope})
         .sort([("display_order", 1)])
     )
     return {"data": [serialize_type(doc) async for doc in cursor]}
@@ -63,24 +80,27 @@ async def list_all_certificate_types(
 async def create_certificate_type(
     payload: CertificateTypeCreate,
     current_user: dict = Depends(require_super_admin),
+    organization_id: str | None = Query(default=None),
 ):
     db = await get_db()
+    scope = _engine_scope(current_user, organization_id)
 
     existing = await db.certificate_types.find_one({
-        "slug": payload.slug, "is_deleted": False,
+        "slug": payload.slug, "is_deleted": False, **scope,
     })
     if existing:
         raise HTTPException(status_code=409, detail="A type with this slug already exists")
 
     # Determine next display_order
     last = await db.certificate_types.find_one(
-        {"is_deleted": False}, sort=[("display_order", -1)]
+        {"is_deleted": False, **scope}, sort=[("display_order", -1)]
     )
     next_order = (last["display_order"] + 1) if last else 0
 
     now = datetime.utcnow()
     doc = {
         "uuid": str(uuid.uuid4()),
+        **scope,
         "slug": payload.slug,
         "name": payload.name,
         "description": payload.description,
@@ -110,9 +130,11 @@ async def update_certificate_type(
     type_uuid: str,
     payload: CertificateTypeUpdate,
     current_user: dict = Depends(require_super_admin),
+    organization_id: str | None = Query(default=None),
 ):
     db = await get_db()
-    doc = await db.certificate_types.find_one({"uuid": type_uuid, "is_deleted": False})
+    scope = _engine_scope(current_user, organization_id)
+    doc = await db.certificate_types.find_one({"uuid": type_uuid, "is_deleted": False, **scope})
     if not doc:
         raise HTTPException(status_code=404, detail="Certificate type not found")
 
@@ -140,9 +162,11 @@ async def update_certificate_type(
 async def delete_certificate_type(
     type_uuid: str,
     current_user: dict = Depends(require_super_admin),
+    organization_id: str | None = Query(default=None),
 ):
     db = await get_db()
-    doc = await db.certificate_types.find_one({"uuid": type_uuid, "is_deleted": False})
+    scope = _engine_scope(current_user, organization_id)
+    doc = await db.certificate_types.find_one({"uuid": type_uuid, "is_deleted": False, **scope})
     if not doc:
         raise HTTPException(status_code=404, detail="Certificate type not found")
 
@@ -158,15 +182,17 @@ async def delete_certificate_type(
 async def reorder_certificate_types(
     payload: ReorderTypesPayload,
     current_user: dict = Depends(require_super_admin),
+    organization_id: str | None = Query(default=None),
 ):
     db = await get_db()
+    scope = _engine_scope(current_user, organization_id)
     for idx, type_uuid in enumerate(payload.type_order):
         await db.certificate_types.update_one(
-            {"uuid": type_uuid, "is_deleted": False},
+            {"uuid": type_uuid, "is_deleted": False, **scope},
             {"$set": {"display_order": idx, "updated_at": datetime.utcnow()}},
         )
     cursor = (
-        db.certificate_types.find({"is_deleted": False})
+        db.certificate_types.find({"is_deleted": False, **scope})
         .sort([("display_order", 1)])
     )
     return {"data": [serialize_type(doc) async for doc in cursor]}

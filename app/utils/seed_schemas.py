@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 
-async def seed_default_attributes(db):
+async def seed_default_attributes(db, organization_id):
     """Upsert predefined attribute values — runs on every startup, safe to re-run."""
 
     now = datetime.utcnow()
@@ -32,6 +32,7 @@ async def seed_default_attributes(db):
     for color in diamond_colors:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "diamond",
             "type": "color",
             "name": color,
@@ -44,6 +45,7 @@ async def seed_default_attributes(db):
     for clarity in diamond_clarity:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "diamond",
             "type": "clarity",
             "name": clarity,
@@ -56,6 +58,7 @@ async def seed_default_attributes(db):
     for cut in diamond_cut:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "diamond",
             "type": "cut",
             "name": cut,
@@ -68,6 +71,7 @@ async def seed_default_attributes(db):
     for category in diamond_categories:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "diamond",
             "type": "category",
             "name": category,
@@ -80,6 +84,7 @@ async def seed_default_attributes(db):
     for metal in metal_types:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "diamond",
             "type": "metal_type",
             "name": metal,
@@ -92,6 +97,7 @@ async def seed_default_attributes(db):
     for conclusion in diamond_conclusions:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "diamond",
             "type": "conclusion",
             "name": conclusion,
@@ -105,6 +111,7 @@ async def seed_default_attributes(db):
     for gemstone in gemstone_types:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "gemstone",
             "type": "gemstone",
             "name": gemstone,
@@ -117,6 +124,7 @@ async def seed_default_attributes(db):
     for shape in gemstone_shapes:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "gemstone",
             "type": "gemstone_shape",
             "name": shape,
@@ -129,6 +137,7 @@ async def seed_default_attributes(db):
     for category in gemstone_categories:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "gemstone",
             "type": "gemstone_category",
             "name": category,
@@ -141,6 +150,7 @@ async def seed_default_attributes(db):
     for observation in microscopic_observations:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "gemstone",
             "type": "microscopic_observation",
             "name": observation,
@@ -154,6 +164,7 @@ async def seed_default_attributes(db):
     for stone in navaratna_stones:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "navaratna",
             "type": "stone_type",
             "name": stone,
@@ -167,6 +178,7 @@ async def seed_default_attributes(db):
     for metal in metal_types:
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "gemstone",
             "type": "metal_type",
             "name": metal,
@@ -177,6 +189,7 @@ async def seed_default_attributes(db):
         })
         attributes.append({
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "group": "navaratna",
             "type": "metal_type",
             "name": metal,
@@ -188,7 +201,7 @@ async def seed_default_attributes(db):
 
     for attr in attributes:
         await db.attributes.update_one(
-            {"group": attr["group"], "type": attr["type"], "name": attr["name"]},
+            {"organization_id": organization_id, "group": attr["group"], "type": attr["type"], "name": attr["name"]},
             {
                 "$set": {k: v for k, v in attr.items() if k not in ("created_at", "created_by", "uuid")},
                 "$setOnInsert": {
@@ -201,7 +214,7 @@ async def seed_default_attributes(db):
         )
 
 
-async def seed_default_certificate_types(db):
+async def seed_default_certificate_types(db, organization_id):
     """Upsert certificate types — runs on every startup, safe to re-run."""
     now = datetime.utcnow()
     system_author = {"user_id": "system", "name": "System", "email": "system"}
@@ -209,6 +222,7 @@ async def seed_default_certificate_types(db):
     types = [
         {
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "slug": "single_diamond",
             "name": "Diamond Jewellery",
             "description": "Jewelry with diamonds (mounted)",
@@ -225,6 +239,7 @@ async def seed_default_certificate_types(db):
         },
         {
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "slug": "loose_diamond",
             "name": "Loose Diamond",
             "description": "Unmounted diamond certification",
@@ -241,6 +256,7 @@ async def seed_default_certificate_types(db):
         },
         {
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "slug": "loose_stone",
             "name": "Loose Gemstone",
             "description": "Unmounted gemstone certification",
@@ -257,6 +273,7 @@ async def seed_default_certificate_types(db):
         },
         {
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "slug": "single_mounded",
             "name": "Single Mounted Gemstone",
             "description": "Single gemstone in setting",
@@ -273,6 +290,7 @@ async def seed_default_certificate_types(db):
         },
         {
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "slug": "double_mounded",
             "name": "Double Mounded",
             "description": "Two gemstones in setting",
@@ -289,6 +307,7 @@ async def seed_default_certificate_types(db):
         },
         {
             "uuid": str(uuid.uuid4()),
+            "organization_id": organization_id,
             "slug": "navaratna",
             "name": "Navaratna",
             "description": "Nine-gem jewelry (traditional)",
@@ -306,7 +325,7 @@ async def seed_default_certificate_types(db):
     ]
     for t in types:
         await db.certificate_types.update_one(
-            {"slug": t["slug"]},
+            {"organization_id": organization_id, "slug": t["slug"]},
             {
                 "$set": {k: v for k, v in t.items() if k not in ("created_at", "created_by", "uuid")},
                 "$setOnInsert": {
@@ -319,7 +338,7 @@ async def seed_default_certificate_types(db):
         )
 
 
-async def seed_default_category_schemas(db):
+async def seed_default_category_schemas(db, organization_id):
     """Upsert category schemas — runs on every startup, safe to re-run."""
     now = datetime.utcnow()
     system_author = {"user_id": "system", "name": "System", "email": "system"}
@@ -327,7 +346,7 @@ async def seed_default_category_schemas(db):
     # Helper to fetch attribute names (returns empty list if no attributes exist yet)
     async def _get_attr_names(group: str, attr_type: str) -> list:
         docs = await db.attributes.find({
-            "group": group, "type": attr_type, "is_deleted": False,
+            "organization_id": organization_id, "group": group, "type": attr_type, "is_deleted": False,
         }).to_list(None)
         return [d["name"] for d in docs]
 
@@ -1122,6 +1141,7 @@ async def seed_default_category_schemas(db):
 
     schemas.append({
         "uuid": str(uuid.uuid4()),
+        "organization_id": organization_id,
         "name": "Navaratna Certificate",
         "group": "navaratna",
         "description": "Nine-gem jewelry (traditional Navaratna)",
@@ -1135,8 +1155,9 @@ async def seed_default_category_schemas(db):
     })
 
     for s in schemas:
+        s.setdefault("organization_id", organization_id)
         await db.category_schemas.update_one(
-            {"group": s["group"]},
+            {"organization_id": organization_id, "group": s["group"]},
             {
                 "$set": {k: v for k, v in s.items() if k not in ("created_at", "created_by", "uuid")},
                 "$setOnInsert": {

@@ -27,6 +27,19 @@ from .core.security import hash_password
 from .core.minio_client import ensure_buckets
 from .utils.organizations import ensure_default_organization
 
+
+async def migrate_certificate_engine_to_org(db, default_org_id):
+    for collection_name in ("certificate_types", "category_schemas", "attributes"):
+        collection = getattr(db, collection_name)
+        await collection.update_many(
+            {"organization_id": {"$exists": False}},
+            {"$set": {"organization_id": default_org_id}},
+        )
+        await collection.update_many(
+            {"organization_id": None},
+            {"$set": {"organization_id": default_org_id}},
+        )
+
 app = FastAPI(title=settings.APP_NAME)
 
 app.add_middleware(
@@ -45,11 +58,12 @@ async def startup_event():
     # Initialize database
     db = await init_db()
     default_org = await ensure_default_organization(db, settings)
+    await migrate_certificate_engine_to_org(db, default_org["_id"])
 
     # Migration: rename legacy "staff" role to "user"
     await db.users.update_many({"role": "staff"}, {"$set": {"role": "user"}})
 
-    # Seed super admin
+    # Seed platform super admin with no organization binding.
     sa = await db.users.find_one({"email": settings.SUPER_ADMIN_EMAIL})
     if not sa:
         now = datetime.utcnow()
@@ -58,13 +72,24 @@ async def startup_event():
             "password": hash_password(settings.SUPER_ADMIN_PASSWORD),
             "name": settings.SUPER_ADMIN_NAME,
             "role": "super_admin",
-            "organization_id": default_org["_id"],
+            "organization_id": None,
             "is_active": True,
             "created_at": now,
             "updated_at": now,
         })
+    else:
+        await db.users.update_one(
+            {"_id": sa["_id"]},
+            {
+                "$set": {
+                    "role": "super_admin",
+                    "organization_id": None,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
 
-    # Seed admin
+    # Seed default organization admin bound to the default organization.
     admin = await db.users.find_one({"email": settings.ADMIN_EMAIL})
     if not admin:
         now = datetime.utcnow()
@@ -78,18 +103,29 @@ async def startup_event():
             "created_at": now,
             "updated_at": now,
         })
+    else:
+        await db.users.update_one(
+            {"_id": admin["_id"]},
+            {
+                "$set": {
+                    "role": "admin",
+                    "organization_id": default_org["_id"],
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
 
     # Seed default attributes (dropdown values) if none exist
     from .utils.seed_schemas import seed_default_attributes
-    await seed_default_attributes(db)
+    await seed_default_attributes(db, default_org["_id"])
 
     # Seed default certificate types if none exist
     from .utils.seed_schemas import seed_default_certificate_types
-    await seed_default_certificate_types(db)
+    await seed_default_certificate_types(db, default_org["_id"])
 
     # Seed default category schemas if none exist
     from .utils.seed_schemas import seed_default_category_schemas
-    await seed_default_category_schemas(db)
+    await seed_default_category_schemas(db, default_org["_id"])
 
 # Routers
 app.include_router(auth_router)
