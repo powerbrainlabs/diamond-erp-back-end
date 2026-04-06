@@ -10,7 +10,7 @@ OrganizationStatus = Literal["active", "suspended"]
 class OrganizationAdminCreate(BaseModel):
     name: str = Field(min_length=2)
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: Optional[str] = Field(default=None, min_length=8)
 
 
 class OrganizationCreate(BaseModel):

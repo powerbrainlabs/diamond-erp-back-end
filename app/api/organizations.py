@@ -1,6 +1,8 @@
 from datetime import datetime
 import io
 import re
+import secrets
+import string
 import uuid
 
 from bson import ObjectId
@@ -119,9 +121,15 @@ async def create_organization(payload: OrganizationCreate, current_user: dict = 
     res = await db.organizations.insert_one(org_doc)
     organization_id = res.inserted_id
 
+    # Use provided password or auto-generate a secure temporary one
+    admin_password = payload.admin.password
+    if not admin_password:
+        alphabet = string.ascii_letters + string.digits + "!@#$"
+        admin_password = "".join(secrets.choice(alphabet) for _ in range(12))
+
     admin_doc = {
         "email": payload.admin.email,
-        "password": hash_password(payload.admin.password),
+        "password": hash_password(admin_password),
         "name": payload.admin.name,
         "role": "admin",
         "features": [],
@@ -143,6 +151,7 @@ async def create_organization(payload: OrganizationCreate, current_user: dict = 
     return {
         "organization": serialize_organization(org),
         "admin": dump_user(admin),
+        "temp_password": admin_password if not payload.admin.password else None,
     }
 
 
