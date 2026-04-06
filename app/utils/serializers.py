@@ -57,6 +57,23 @@ def dump_client(doc):
         "updated_at": doc["updated_at"],
     }
 
+def dump_manufacturer(doc):
+    if not doc:
+        return None
+
+    return {
+        "id": doc["uuid"],
+        "uuid": doc["uuid"],
+        "name": doc["name"],
+        "contact_person": doc.get("contact_person"),
+        "email": doc.get("email"),
+        "phone": doc.get("phone"),
+        "address": doc.get("address"),
+        "notes": doc.get("notes"),
+        "created_at": doc.get("created_at"),
+        "updated_at": doc.get("updated_at"),
+    }
+
 
 def dump_qc_report(doc) -> dict:
     d = dump_id(dict(doc))

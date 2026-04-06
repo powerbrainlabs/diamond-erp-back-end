@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, Literal
 from datetime import datetime
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 import uuid
 
 from ..schemas.job import JobCreate, JobUpdate, JobStatusPatch
@@ -18,6 +19,18 @@ ALLOWED_SORTS = {
     "job_number": "job_number"
 }
 
+
+def normalize_optional_string(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return value
+
+    cleaned = value.strip()
+    if cleaned.lower() in {"", "none", "null", "undefined"}:
+        return None
+    return cleaned
+
 # ✅ Create Job
 @router.post("", status_code=201)
 async def create_job(payload: JobCreate, current_user: dict = Depends(require_staff)):
@@ -27,6 +40,12 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
     client = await db.clients.find_one({"uuid": payload.client_id})
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
+
+    manufacturer_id = normalize_optional_string(payload.manufacturer_id)
+    if manufacturer_id:
+        manufacturer = await db.manufacturers.find_one({"uuid": manufacturer_id, "is_deleted": False})
+        if not manufacturer:
+            raise HTTPException(status_code=404, detail="Manufacturer not found")
 
     now = datetime.utcnow()
     job_no = await next_job_number()
@@ -48,27 +67,31 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
             "photography": {"status": "pending", "started_at": None, "done_at": None, "done_by": None},
         },
         "received_date": received,
+        "received_datetime": received,
         "received_from_name": payload.received_from_name,
         "expected_delivery_date": payload.expected_delivery_date,
         "actual_delivery_date": None,
         "notes": payload.notes,
-        "manufacturer_id": payload.manufacturer_id,
-        "job_type": payload.job_type,
+        "manufacturer_id": manufacturer_id,
+        "job_type": normalize_optional_string(payload.job_type),
         "item_quantity": payload.item_quantity,
         "item_weight": payload.item_weight,
         "item_size": payload.item_size,
         "items": [i.dict() for i in payload.items],
         "created_by": {
-            "user_id": current_user["id"],
-            "name": current_user["name"],
-            "email": current_user["email"],
+            "user_id": current_user.get("id"),
+            "name": current_user.get("name"),
+            "email": current_user.get("email"),
         },
         "is_deleted": False,
         "created_at": now,
         "updated_at": now,
     }
 
-    await db.jobs.insert_one(doc)
+    try:
+        await db.jobs.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(status_code=409, detail="Job number already exists. Please try again.")
     return dump_job(doc)
 
 # ✅ Upcoming Deliveries
@@ -147,13 +170,21 @@ async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends
     updates = {}
     for field in [
         "item_type", "item_description", "priority",
-        "expected_delivery_date", "notes", "received_from_name", "received_date"
+        "expected_delivery_date", "notes", "received_from_name", "received_date", "job_type"
     ]:
         val = getattr(payload, field, None)
         if val is not None:
-            updates[field] = val
+            updates[field] = normalize_optional_string(val) if field == "job_type" else val
+    if payload.manufacturer_id is not None:
+        manufacturer_id = normalize_optional_string(payload.manufacturer_id)
+        if manufacturer_id:
+            manufacturer = await db.manufacturers.find_one({"uuid": manufacturer_id, "is_deleted": False})
+            if not manufacturer:
+                raise HTTPException(status_code=404, detail="Manufacturer not found")
+        updates["manufacturer_id"] = manufacturer_id
     if payload.received_datetime is not None:
         updates["received_date"] = payload.received_datetime
+        updates["received_datetime"] = payload.received_datetime
     if payload.items is not None:
         updates["items"] = [i.dict() for i in payload.items]
 

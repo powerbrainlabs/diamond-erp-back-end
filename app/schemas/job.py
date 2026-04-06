@@ -54,8 +54,11 @@ class JobUpdate(BaseModel):
     received_date: Optional[datetime] = None
     expected_delivery_date: Optional[date] = None
     actual_delivery_date: Optional[datetime] = None
+    received_from_name: Optional[str] = None
     notes: Optional[str] = None
     received_datetime: Optional[datetime] = None
+    manufacturer_id: Optional[str] = None
+    job_type: Optional[str] = None
     items: Optional[List[JobItem]] = None
 
 class JobStatusPatch(BaseModel):

@@ -6,7 +6,7 @@ import uuid
 from pydantic import BaseModel
 from ..db.database import get_db
 from ..core.dependencies import require_admin
-from ..utils.serializers import serialize_mongo_doc
+from ..utils.serializers import dump_manufacturer
 
 router = APIRouter(prefix="/api/manufacturers", tags=["Manufacturers"])
 
@@ -51,7 +51,7 @@ async def create_manufacturer(
     }
 
     await db.manufacturers.insert_one(doc)
-    return serialize_mongo_doc(doc)
+    return dump_manufacturer(doc)
 
 
 # ✅ List Manufacturers
@@ -88,7 +88,7 @@ async def list_manufacturers(
         .limit(limit)
     )
 
-    items = [serialize_mongo_doc(doc) async for doc in cursor]
+    items = [dump_manufacturer(doc) async for doc in cursor]
 
     total_pages = (total + limit - 1) // limit
 
@@ -123,7 +123,7 @@ async def get_manufacturer(uuid: str):
     if not doc:
         raise HTTPException(status_code=404, detail="Manufacturer not found")
 
-    return serialize_mongo_doc(doc)
+    return dump_manufacturer(doc)
 
 
 # ✅ Update Manufacturer
@@ -152,7 +152,7 @@ async def update_manufacturer(
     await db.manufacturers.update_one({"uuid": uuid}, {"$set": updates})
 
     fresh = await db.manufacturers.find_one({"uuid": uuid})
-    return serialize_mongo_doc(fresh)
+    return dump_manufacturer(fresh)
 
 
 # ✅ Delete Manufacturer
