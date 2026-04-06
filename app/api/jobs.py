@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, Literal
-from datetime import datetime
+from datetime import datetime, date, time
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 import uuid
@@ -30,6 +30,12 @@ def normalize_optional_string(value: Optional[str]) -> Optional[str]:
     if cleaned.lower() in {"", "none", "null", "undefined"}:
         return None
     return cleaned
+
+
+def coerce_datetime_value(value):
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return datetime.combine(value, time.min)
+    return value
 
 # ✅ Create Job
 @router.post("", status_code=201)
@@ -174,7 +180,10 @@ async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends
     ]:
         val = getattr(payload, field, None)
         if val is not None:
-            updates[field] = normalize_optional_string(val) if field == "job_type" else val
+            normalized = normalize_optional_string(val) if field == "job_type" else val
+            if field == "expected_delivery_date":
+                normalized = coerce_datetime_value(normalized)
+            updates[field] = normalized
     if payload.manufacturer_id is not None:
         manufacturer_id = normalize_optional_string(payload.manufacturer_id)
         if manufacturer_id:
