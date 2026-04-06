@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from datetime import datetime
 
 from .core.config import settings
@@ -49,6 +50,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Ensure CORS headers are present even on unhandled 500 errors.
+# Without this, Starlette drops CORS headers on exceptions and the
+# browser reports a misleading "CORS error" instead of the real error.
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    origin = request.headers.get("origin", "")
+    allowed = settings.allowed_origins
+    cors_origin = origin if origin in allowed else (allowed[0] if allowed else "*")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers={
+            "Access-Control-Allow-Origin": cors_origin,
+            "Access-Control-Allow-Credentials": "true",
+        },
+    )
 
 @app.on_event("startup")
 async def startup_event():

@@ -30,9 +30,13 @@ def dump_user(doc) -> dict:
         d["organization"] = serialize_organization(d["organization"])
     return d
 
-def dump_job(doc) -> dict:
-    d = dump_id(dict(doc))
+def _rename_id(d: dict) -> dict:
+    if "_id" in d:
+        d["id"] = d.pop("_id")
     return d
+
+def dump_job(doc) -> dict:
+    return _rename_id(serialize_mongo_doc(dict(doc)))
 
 def dump_client(doc):
     if not doc:
@@ -64,8 +68,7 @@ def dump_client(doc):
 
 
 def dump_qc_report(doc) -> dict:
-    d = dump_id(dict(doc))
-    return d
+    return _rename_id(serialize_mongo_doc(dict(doc)))
 
 
 def serialize_mongo_doc(obj: Any) -> Any:

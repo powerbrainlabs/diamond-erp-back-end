@@ -95,6 +95,7 @@ async def create_organization(payload: OrganizationCreate, current_user: dict = 
         "short_name": (payload.short_name or payload.display_name or payload.official_name).strip(),
         "slug": slug,
         "logo_url": payload.logo_url or "",
+        "card_logo_url": payload.card_logo_url or "",
         "primary_email": payload.primary_email,
         "primary_phone": payload.primary_phone or "",
         "website": payload.website or "",

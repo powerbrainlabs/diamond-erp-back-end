@@ -461,6 +461,11 @@ async def list_certifications(
 
         serialized = serialize_mongo_doc(doc)
 
+        # Attach organization data (name, logo, branding for certificate display)
+        if doc.get("organization_id"):
+            organization = await db.organizations.find_one({"_id": doc["organization_id"]})
+            serialized["organization"] = serialize_organization(organization)
+
         # 🔥 Add presigned URLs
         serialized = attach_presigned_urls(serialized)
 

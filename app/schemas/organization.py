@@ -18,6 +18,7 @@ class OrganizationCreate(BaseModel):
     display_name: Optional[str] = None
     short_name: Optional[str] = None
     logo_url: Optional[str] = None
+    card_logo_url: Optional[str] = None
     primary_email: Optional[EmailStr] = None
     primary_phone: Optional[str] = None
     website: Optional[str] = None
@@ -42,6 +43,7 @@ class OrganizationUpdate(BaseModel):
     display_name: Optional[str] = None
     short_name: Optional[str] = None
     logo_url: Optional[str] = None
+    card_logo_url: Optional[str] = None
     primary_email: Optional[EmailStr] = None
     primary_phone: Optional[str] = None
     website: Optional[str] = None
@@ -66,6 +68,7 @@ class OrganizationOut(BaseModel):
     display_name: str
     short_name: Optional[str] = None
     logo_url: Optional[str] = None
+    card_logo_url: Optional[str] = None
     primary_email: Optional[str] = None
     primary_phone: Optional[str] = None
     website: Optional[str] = None
