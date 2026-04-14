@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends, Query
+from fastapi.responses import Response
 from typing import List, Dict, Any, Literal, Optional
 from datetime import datetime
 import uuid
@@ -644,3 +645,45 @@ async def delete_certification(uuid: str):
     )
 
     return {"detail": "Certificate deleted successfully"}
+
+
+class DownloadPdfPayload(BaseModel):
+    uuids: List[str]
+
+
+@router.post("/download-pdf")
+async def download_certificates_pdf(payload: DownloadPdfPayload):
+    if not payload.uuids:
+        raise HTTPException(status_code=400, detail="No certificates selected")
+
+    from ..utils.cert_pdf_generator import generate_certificates_pdf_async
+
+    db = await get_db()
+    certs = []
+    for cert_uuid in payload.uuids:
+        doc = await db.certifications.find_one({"uuid": cert_uuid, "is_deleted": False})
+        if doc:
+            doc = attach_presigned_urls(serialize_mongo_doc(doc))
+            schema_uuid = doc.get("schema_uuid") or doc.get("category_uuid") or doc.get("category_id")
+            if schema_uuid:
+                schema = await db.category_schemas.find_one({"uuid": schema_uuid})
+                if schema:
+                    doc["schema"] = serialize_mongo_doc(schema)
+            if doc.get("qr_code_url"):
+                try:
+                    bucket, file_id = doc["qr_code_url"].split("/", 1)
+                    doc["qr_code_signed_url"] = get_presigned_url(bucket, file_id)
+                except Exception:
+                    pass
+            certs.append(doc)
+
+    if not certs:
+        raise HTTPException(status_code=404, detail="No matching certificates found")
+
+    pdf_bytes = await generate_certificates_pdf_async(certs)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="certificates_{len(certs)}.pdf"'},
+    )
