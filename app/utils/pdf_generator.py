@@ -17,7 +17,7 @@ COLOR_RED = (220/255, 38/255, 38/255)           # #dc2626
 COLOR_BG_CARD = (255/255, 255/255, 255/255)     # White
 
 def draw_job_card(c: canvas.Canvas, x: float, y: float, job: dict, client: dict, manufacturer: dict, logo_path: str):
-    width = 90 * mm
+    width = 87 * mm
     height = 55 * mm
     padding = 4 * mm
     
@@ -254,17 +254,19 @@ def generate_jobs_pdf(jobs_data: List[dict], logo_path: str) -> io.BytesIO:
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     
-    # Grid settings
-    # Center the 2-column grid: (A4_width - 2*card_width - gap_x) / 2
-    margin_left = (width - 2 * 90 * mm - 10 * mm) / 2
-    margin_top = 10 * mm
-    card_width = 90 * mm
+    # Grid settings — matches old app: 8.7cm x 5.5cm cards, 10 per page (2 cols x 5 rows)
+    # Old app PDF: left margin 1.55cm, right 1.58cm, flex gap 10px ≈ 2.6mm
+    # A4=210mm: 15.5 + 87 + 5 + 87 + 15.5 = 210mm
+    # A4=297mm: 1.8 + 5*(55+3.6) + extra ≈ 297mm
+    card_width = 87 * mm
     card_height = 55 * mm
-    gap_x = 10 * mm
-    gap_y = 10 * mm
-    
+    gap_x = 5 * mm
+    gap_y = 3.6 * mm
+    margin_left = 15.5 * mm
+    margin_top = 2 * mm
+
     cols = 2
-    rows = 4 # Fits 4 rows of 55mm = 220mm + margins on 297mm page
+    rows = 5  # 5 rows of 55mm = 275mm, fits A4 297mm
     
     x = margin_left
     y = height - margin_top
