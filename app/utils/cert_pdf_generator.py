@@ -79,6 +79,9 @@ async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
             url = cert.get(key)
             if url:
                 urls.add(url)
+        # Add fallback QR URL
+        if not cert.get('qr_code_signed_url') and cert.get('uuid'):
+            urls.add(f'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={cert["uuid"]}')
 
     results = await asyncio.gather(*[_fetch_as_b64(url) for url in urls])
     return {url: b64 for url, b64 in zip(urls, results) if b64}
@@ -93,6 +96,10 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     photo_url = img_map.get(cert.get('photo_signed_url') or '') or ''
     brand_logo_url = img_map.get(cert.get('brand_logo_signed_url') or '') or ''
     qr_url = img_map.get(cert.get('qr_code_signed_url') or '') or ''
+    # Fallback: generate QR from qrserver.com if no stored QR
+    if not qr_url and cert.get('uuid'):
+        cert_uuid = cert['uuid']
+        qr_url = f'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={cert_uuid}'
     cert_number = _esc(cert.get('certificate_number') or '')
     description = _esc(cert.get('generated_description') or fields.get('description') or '')
 
@@ -105,8 +112,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
         qr_html = f'<img src="{_esc(qr_url)}" class="qr-code" alt="QR">'
 
     # Photo
-    photo_html = f'<img src="{_esc(photo_url)}" class="cert-photo" alt="Photo">' if photo_url else \
-        '<div class="cert-photo no-photo"></div>'
+    photo_html = f'<img src="{_esc(photo_url)}" class="cert-photo" alt="Photo">' if photo_url else ''
 
     # Build field rows
     rows_html = ''
@@ -182,10 +188,10 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 
     # Density: count visible rows to scale font down if too many
     row_count = rows_html.count('field-row')
-    if row_count >= 12:
+    if row_count >= 11:
         density_style = 'font-size:0.44em;line-height:8px;'
-    elif row_count >= 9:
-        density_style = 'font-size:0.50em;line-height:9px;'
+    elif row_count >= 8:
+        density_style = 'font-size:0.49em;line-height:9px;'
     else:
         density_style = ''
 
@@ -198,10 +204,8 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
       {qr_html}
     </div>
   </header>
-  <div class="photo-block">
-    {photo_html}
-    <span class="approx-label">Approx Photo</span>
-  </div>
+  {photo_html}
+  <span class="approx-label">Approx Photo</span>
   <div class="card-body">
     <div class="cert-title">CERTIFICATE OF AUTHENTICITY</div>
     <div class="cert-details">
@@ -265,6 +269,7 @@ body {
   font-family: 'Poppins', Arial, sans-serif;
   page-break-inside: avoid;
   overflow: hidden;
+  contain: paint;
 }
 
 .card-header {
@@ -297,36 +302,31 @@ body {
 }
 
 .qr-code {
-  height: 55.5px;
-  position: absolute;
-  top: 3.3px;
-  right: 0;
-  transform: translate(0px, -0.5px);
-}
-
-.photo-block {
-  position: absolute;
-  top: 18px;
-  right: 10px;
-  height: 0.535in;
-  transform: translate(-40px, 80px);
-  z-index: 2;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .cert-photo {
-  height: 0.535in;
+  position: absolute;
+  top: 100px;
+  right: 12px;
+  width: 58px;
+  height: 54px;
   object-fit: contain;
+  z-index: 2;
 }
-
-.no-photo { height: 0.535in; }
 
 .approx-label {
   font-size: 0.28em;
   position: absolute;
   font-weight: 400;
-  bottom: 55px;
-  right: -10px;
-  transform: rotate(90deg) translate(-20px, 0px);
+  top: 110px;
+  right: 2px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
   color: #4b5563;
 }
 

@@ -669,6 +669,11 @@ async def download_certificates_pdf(payload: DownloadPdfPayload):
                 schema = await db.category_schemas.find_one({"uuid": schema_uuid})
                 if schema:
                     doc["schema"] = serialize_mongo_doc(schema)
+                    description_template = schema.get("description_template")
+                    if description_template and doc.get("fields"):
+                        doc["generated_description"] = render_description_template(
+                            description_template, doc["fields"]
+                        )
             if doc.get("qr_code_url"):
                 try:
                     bucket, file_id = doc["qr_code_url"].split("/", 1)
