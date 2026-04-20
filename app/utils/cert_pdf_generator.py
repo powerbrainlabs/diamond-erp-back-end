@@ -306,6 +306,7 @@ body {
   height: 48px;
   object-fit: contain;
   flex-shrink: 0;
+  margin-top: 10px;
 }
 
 .cert-photo {
@@ -331,14 +332,14 @@ body {
 }
 
 .card-body {
-  margin-top: 52px;
+  margin-top: 56px;
 }
 
 .cert-title {
   font-weight: bold;
   font-size: 0.6em;
   text-align: center;
-  padding: 5px 0;
+  padding: 6px 0 2px 0;
 }
 
 .cert-details {
@@ -471,26 +472,27 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
 </html>"""
 
 
-async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
-    from playwright.async_api import async_playwright
+def _render_pdf_sync(html: str) -> bytes:
+    from playwright.sync_api import sync_playwright
 
-    img_map = await _prefetch_images(certs)
-    html = _build_html(certs, img_map)
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch()
-        page = await browser.new_page()
-        await page.set_content(html, wait_until='networkidle')
-        # Wait for Poppins font
-        await page.wait_for_timeout(800)
-        pdf_bytes = await page.pdf(
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content(html, wait_until='networkidle')
+        page.wait_for_timeout(800)
+        pdf_bytes = page.pdf(
             format='A4',
             margin={'top': '0cm', 'right': '1.58cm', 'bottom': '0cm', 'left': '1.55cm'},
             print_background=True,
         )
-        await browser.close()
-
+        browser.close()
     return pdf_bytes
+
+
+async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
+    img_map = await _prefetch_images(certs)
+    html = _build_html(certs, img_map)
+    return await asyncio.to_thread(_render_pdf_sync, html)
 
 
 def generate_certificates_pdf(certs: List[Dict[str, Any]]) -> bytes:

@@ -9,6 +9,10 @@ class JobItem(BaseModel):
     item_type: str
     weight: Optional[float] = None
     quantity: Optional[int] = None
+    category: Optional[str] = None
+    gemstone: Optional[str] = None
+    primary_gemstone: Optional[str] = None
+    secondary_gemstone: Optional[str] = None
 Status = Literal["pending", "qc", "rfd", "photography", "certification", "completed"]
 Priority = Literal["low", "medium", "high", "urgent"]
 
