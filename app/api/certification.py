@@ -2,7 +2,10 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends, Q
 from fastapi.responses import Response
 from typing import List, Dict, Any, Literal, Optional
 from datetime import datetime
+import logging
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from pydantic import BaseModel
 from ..core.minio_client import minio_client
@@ -685,7 +688,11 @@ async def download_certificates_pdf(payload: DownloadPdfPayload):
     if not certs:
         raise HTTPException(status_code=404, detail="No matching certificates found")
 
-    pdf_bytes = await generate_certificates_pdf_async(certs)
+    try:
+        pdf_bytes = await generate_certificates_pdf_async(certs)
+    except Exception:
+        logger.exception("PDF generation failed")
+        raise HTTPException(status_code=500, detail="Failed to generate PDF")
 
     return Response(
         content=pdf_bytes,

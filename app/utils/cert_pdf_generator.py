@@ -476,7 +476,7 @@ def _render_pdf_sync(html: str) -> bytes:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage'])
         page = browser.new_page()
         page.set_content(html, wait_until='networkidle')
         page.wait_for_timeout(800)
