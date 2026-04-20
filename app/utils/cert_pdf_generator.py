@@ -323,7 +323,7 @@ body {
   height: 48px;
   object-fit: contain;
   flex-shrink: 0;
-  margin-top: 10px;
+  margin-top: 4px;
 }
 
 .cert-photo {
