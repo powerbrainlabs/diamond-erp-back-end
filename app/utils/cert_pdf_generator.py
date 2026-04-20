@@ -260,7 +260,7 @@ body {
   background-color: white;
   width: 8.7cm;
   height: 5.5cm;
-  margin: 5px 0 0 0;
+  margin: 5px 0 5px 0;
   padding: 0;
   border-top: 1px dashed #2b1fb4;
   border-left: 1px dashed #2b1fb4;
@@ -444,7 +444,7 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
         front_cards = ''.join(_render_card_front(c, img_map) for c in chunk)
         # pad to even count so last row is balanced
         if len(chunk) % 2 == 1:
-            front_cards += '<div style="width:8.7cm;height:5.5cm;margin:5px 0 0 0;flex-shrink:0"></div>'
+            front_cards += '<div style="width:8.7cm;height:5.5cm;margin:5px 0 5px 0;flex-shrink:0"></div>'
         pages_html += f'<div class="page">{front_cards}</div>'
 
         if include_back:
@@ -456,7 +456,7 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
                     back_cards_list.append(_render_card_back(pair[1], img_map))
                     back_cards_list.append(_render_card_back(pair[0], img_map))
                 else:
-                    back_cards_list.append('<div style="width:8.7cm;height:5.5cm;margin:5px 0 0 0;flex-shrink:0"></div>')
+                    back_cards_list.append('<div style="width:8.7cm;height:5.5cm;margin:5px 0 5px 0;flex-shrink:0"></div>')
                     back_cards_list.append(_render_card_back(pair[0], img_map))
             pages_html += f'<div class="page">{"".join(back_cards_list)}</div>'
 
