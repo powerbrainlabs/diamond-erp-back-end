@@ -188,18 +188,34 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 
     # Density: count visible rows to scale font down if too many
     row_count = rows_html.count('field-row')
-    if row_count >= 11:
-        density_style = 'font-size:0.44em;line-height:8px;'
+    # Dense tiers (many rows — shrink to fit)
+    PDF_DENSITY = {
+        'rows_13_plus': 'font-size:0.42em;line-height:7.5px;',
+        'rows_12':      'font-size:0.44em;line-height:8px;',
+        'rows_11':      'font-size:0.46em;line-height:8.5px;',
+        'rows_10':      'font-size:0.49em;line-height:9px;',
+        # Sparse tiers (few rows — expand to fill)
+        'rows_8_9':     'font-size:0.57em;line-height:12px;',
+        'rows_7':       'font-size:0.55em;line-height:10px;',
+        'rows_5_6':     'font-size:0.58em;line-height:11px;',
+        'rows_1_4':     'font-size:0.62em;line-height:13px;',
+    }
+    if row_count >= 13:
+        density_style = PDF_DENSITY['rows_13_plus']
+    elif row_count == 12:
+        density_style = PDF_DENSITY['rows_12']
+    elif row_count == 11:
+        density_style = PDF_DENSITY['rows_11']
     elif row_count == 10:
-        density_style = 'font-size:0.57em;line-height:12px;'
+        density_style = PDF_DENSITY['rows_10']
     elif row_count <= 4:
-        density_style = 'font-size:0.62em;line-height:13px;'
+        density_style = PDF_DENSITY['rows_1_4']
     elif row_count <= 6:
-        density_style = 'font-size:0.58em;line-height:11px;'
-    elif row_count <= 7:
-        density_style = 'font-size:0.55em;line-height:10px;'
+        density_style = PDF_DENSITY['rows_5_6']
+    elif row_count == 7:
+        density_style = PDF_DENSITY['rows_7']
     elif row_count <= 9:
-        density_style = 'font-size:0.57em;line-height:12px;'
+        density_style = PDF_DENSITY['rows_8_9']
     else:
         density_style = ''
 
@@ -327,11 +343,12 @@ body {
 }
 
 .qr-code {
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 46px;
   object-fit: contain;
   flex-shrink: 0;
-  margin-top: 0;
+  margin-top: 4px;
+  margin-right: -3px;
   align-self: flex-start;
 }
 
