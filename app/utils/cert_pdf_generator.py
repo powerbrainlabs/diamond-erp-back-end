@@ -246,21 +246,38 @@ body {
 }
 
 .page {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: space-between;
-  padding-top: 5px;
-  box-sizing: border-box;
   page-break-after: always;
+  width: 178mm;
+  height: 289mm;
+  margin: 0 auto;
+  background: white;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .page:last-child { page-break-after: avoid; }
 
+.print-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2mm;
+  width: calc(8.6cm * 2 + 3mm);
+  margin: 0 auto;
+  align-items: flex-start;
+}
+
+.print-row {
+  display: flex;
+  flex-direction: row;
+  gap: 3mm;
+  justify-content: flex-start;
+  align-items: flex-start;
+  width: 100%;
+}
+
 .cert-card {
   background-color: white;
-  width: 8.7cm;
+  width: 8.6cm;
   height: 5.5cm;
-  margin: 5px 0 5px 0;
   padding: 0;
   border-top: 1px dashed #2b1fb4;
   border-left: 1px dashed #2b1fb4;
@@ -302,8 +319,8 @@ body {
 }
 
 .qr-code {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   object-fit: contain;
   flex-shrink: 0;
   margin-top: 10px;
@@ -311,20 +328,27 @@ body {
 
 .cert-photo {
   position: absolute;
-  top: 100px;
-  right: 12px;
-  width: 58px;
+  top: 94px;
+  right: 18px;
+  width: 50px;
   height: 54px;
   object-fit: contain;
+  padding: 0 6px 0 0;
+  box-sizing: border-box;
   z-index: 2;
 }
 
 .approx-label {
-  font-size: 0.28em;
+  font-size: 0.2em;
   position: absolute;
-  font-weight: 400;
-  top: 110px;
-  right: 2px;
+  font-weight: 500;
+  top: 94px;
+  right: 10px;
+  height: 46px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   writing-mode: vertical-rl;
   text-orientation: mixed;
   white-space: nowrap;
@@ -332,20 +356,21 @@ body {
 }
 
 .card-body {
-  margin-top: 56px;
+  margin-top: 48px;
 }
 
 .cert-title {
   font-weight: bold;
-  font-size: 0.6em;
+  font-size: 0.61em;
   text-align: center;
-  padding: 6px 0 2px 0;
+  padding: 8px 0 3px 0;
 }
 
 .cert-details {
   position: relative;
   padding-left: 10px;
-  padding-right: 4px;
+  padding-right: 10px;
+  padding-bottom: 12px;
 }
 
 .bg-particles {
@@ -362,8 +387,8 @@ body {
 .fields-area {
   position: relative;
   z-index: 1;
-  font-size: 0.55em;
-  line-height: 11px;
+  font-size: 0.52em;
+  line-height: 9.2px;
 }
 
 .field-row {
@@ -375,7 +400,7 @@ body {
 .field-row.full-width { width: 100%; }
 
 .label {
-  width: 85px;
+  width: 82px;
   flex-shrink: 0;
   font-weight: 400;
 }
@@ -393,22 +418,20 @@ body {
 
 .desc-value {
   flex: 1;
-  line-height: 1.2;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  line-height: 1.1;
+  display: block;
+  overflow: visible;
   word-break: break-word;
   min-width: 0;
 }
 
 .card-footer {
   position: absolute;
-  bottom: 7px;
+  bottom: 5px;
   left: 0;
   width: 100%;
   text-align: center;
-  font-size: 0.44em;
+  font-size: 0.39em;
   background: white;
   z-index: 3;
 }
@@ -437,28 +460,26 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
     CARDS_PER_PAGE = 10
 
     pages_html = ''
-    chunks = [certs[i:i+CARDS_PER_PAGE] for i in range(0, len(certs), CARDS_PER_PAGE)]
+    chunks = [certs[i:i + CARDS_PER_PAGE] for i in range(0, len(certs), CARDS_PER_PAGE)]
 
     for chunk in chunks:
-        # Front page — flex-wrap lays cards 2 per row automatically
-        front_cards = ''.join(_render_card_front(c, img_map) for c in chunk)
-        # pad to even count so last row is balanced
-        if len(chunk) % 2 == 1:
-            front_cards += '<div style="width:8.7cm;height:5.5cm;margin:5px 0 5px 0;flex-shrink:0"></div>'
-        pages_html += f'<div class="page">{front_cards}</div>'
+        front_rows = []
+        for i in range(0, len(chunk), 2):
+            row = chunk[i:i + 2]
+            row_html = ''.join(_render_card_front(c, img_map) for c in row)
+            front_rows.append(f'<div class="print-row">{row_html}</div>')
+        pages_html += f'<div class="page"><div class="print-grid">{"".join(front_rows)}</div></div>'
 
         if include_back:
-            # Back page — pairs reversed so right card prints behind left card
-            back_cards_list = []
+            back_rows = []
             for i in range(0, len(chunk), 2):
-                pair = chunk[i:i+2]
+                pair = chunk[i:i + 2]
                 if len(pair) == 2:
-                    back_cards_list.append(_render_card_back(pair[1], img_map))
-                    back_cards_list.append(_render_card_back(pair[0], img_map))
+                    row_html = _render_card_back(pair[1], img_map) + _render_card_back(pair[0], img_map)
                 else:
-                    back_cards_list.append('<div style="width:8.7cm;height:5.5cm;margin:5px 0 5px 0;flex-shrink:0"></div>')
-                    back_cards_list.append(_render_card_back(pair[0], img_map))
-            pages_html += f'<div class="page">{"".join(back_cards_list)}</div>'
+                    row_html = '<div style="width:8.6cm;height:5.5cm;flex-shrink:0"></div>' + _render_card_back(pair[0], img_map)
+                back_rows.append(f'<div class="print-row">{row_html}</div>')
+            pages_html += f'<div class="page"><div class="print-grid">{"".join(back_rows)}</div></div>'
 
     return f"""<!DOCTYPE html>
 <html>
@@ -482,7 +503,7 @@ def _render_pdf_sync(html: str) -> bytes:
         page.wait_for_timeout(800)
         pdf_bytes = page.pdf(
             format='A4',
-            margin={'top': '0cm', 'right': '1.58cm', 'bottom': '0cm', 'left': '1.55cm'},
+            margin={'top': '4mm', 'right': '10mm', 'bottom': '4mm', 'left': '10mm'},
             print_background=True,
         )
         browser.close()
