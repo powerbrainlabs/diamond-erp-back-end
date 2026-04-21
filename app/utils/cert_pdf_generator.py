@@ -190,8 +190,16 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     row_count = rows_html.count('field-row')
     if row_count >= 11:
         density_style = 'font-size:0.44em;line-height:8px;'
-    elif row_count >= 8:
-        density_style = 'font-size:0.49em;line-height:9px;'
+    elif row_count == 10:
+        density_style = 'font-size:0.57em;line-height:12px;'
+    elif row_count <= 4:
+        density_style = 'font-size:0.62em;line-height:13px;'
+    elif row_count <= 6:
+        density_style = 'font-size:0.58em;line-height:11px;'
+    elif row_count <= 7:
+        density_style = 'font-size:0.55em;line-height:10px;'
+    elif row_count <= 9:
+        density_style = 'font-size:0.57em;line-height:12px;'
     else:
         density_style = ''
 
@@ -319,11 +327,12 @@ body {
 }
 
 .qr-code {
-  width: 40px;
-  height: 40px;
+  width: 52px;
+  height: 52px;
   object-fit: contain;
   flex-shrink: 0;
-  margin-top: 10px;
+  margin-top: 0;
+  align-self: flex-start;
 }
 
 .cert-photo {
