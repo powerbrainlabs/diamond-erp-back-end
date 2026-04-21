@@ -319,11 +319,11 @@ body {
 }
 
 .qr-code {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   object-fit: contain;
   flex-shrink: 0;
-  margin-top: 4px;
+  margin-top: 10px;
 }
 
 .cert-photo {
