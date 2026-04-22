@@ -27,6 +27,16 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
+            # Ensure Poppins system font is installed (needed for Playwright PDF rendering)
+            if ! fc-list | grep -q Poppins; then
+              mkdir -p /home/ec2-user/.local/share/fonts/poppins
+              curl -sLo /home/ec2-user/.local/share/fonts/poppins/Poppins-Regular.ttf 'https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Regular.ttf'
+              curl -sLo /home/ec2-user/.local/share/fonts/poppins/Poppins-Medium.ttf 'https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Medium.ttf'
+              curl -sLo /home/ec2-user/.local/share/fonts/poppins/Poppins-SemiBold.ttf 'https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-SemiBold.ttf'
+              curl -sLo /home/ec2-user/.local/share/fonts/poppins/Poppins-Bold.ttf 'https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Bold.ttf'
+              fc-cache -f /home/ec2-user/.local/share/fonts/
+            fi
+
             # Install any new dependencies
             pip3 install -r requirements.txt --quiet
 
