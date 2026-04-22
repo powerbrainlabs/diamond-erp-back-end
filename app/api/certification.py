@@ -164,6 +164,8 @@ async def create_certification(
         "is_deleted": False,
         "is_published": False,
         "published_at": None,
+        "is_rejected": False,
+        "rejected_at": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -222,6 +224,8 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
                 "is_deleted": False,
                 "is_published": False,
                 "published_at": None,
+                "is_rejected": False,
+                "rejected_at": None,
                 "created_at": now,
                 "updated_at": now
             })
@@ -345,21 +349,56 @@ class BulkPublishPayload(BaseModel):
     uuids: List[str]
 
 
+@router.patch("/{cert_uuid}/reject")
+async def reject_certification(cert_uuid: str):
+    db = await get_db()
+    doc = await db.certifications.find_one({"uuid": cert_uuid, "is_deleted": False})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    if not doc.get("is_published"):
+        raise HTTPException(status_code=400, detail="Only published certificates can be rejected")
+    if doc.get("is_rejected"):
+        return {"detail": "Certificate already rejected"}
+
+    now = datetime.utcnow()
+    await db.certifications.update_one(
+        {"uuid": cert_uuid, "is_deleted": False},
+        {
+            "$set": {
+                "is_rejected": True,
+                "rejected_at": now,
+                "updated_at": now,
+            }
+        },
+    )
+    return {"detail": "Certificate rejected successfully"}
+
+
 @router.patch("/publish")
 async def bulk_publish_certifications(payload: BulkPublishPayload):
     """
     Bulk publish certificates by UUID list.
-    Sets is_published=True and published_at=now on matching certs.
+    Sets is_published=True and published_at=now on matching non-rejected certs.
     """
     if not payload.uuids:
         raise HTTPException(status_code=400, detail="No UUIDs provided")
     db = await get_db()
     now = datetime.utcnow()
+    rejected_count = await db.certifications.count_documents(
+        {"uuid": {"$in": payload.uuids}, "is_deleted": False, "is_rejected": True}
+    )
     result = await db.certifications.update_many(
-        {"uuid": {"$in": payload.uuids}, "is_deleted": False},
+        {"uuid": {"$in": payload.uuids}, "is_deleted": False, "is_rejected": {"$ne": True}},
         {"$set": {"is_published": True, "published_at": now, "updated_at": now}},
     )
-    return {"detail": f"{result.modified_count} certificate(s) published"}
+    detail = f"{result.modified_count} certificate(s) published"
+    if rejected_count:
+        detail += f"; {rejected_count} rejected certificate(s) skipped"
+    return {
+        "detail": detail,
+        "published_count": result.modified_count,
+        "skipped_rejected_count": rejected_count,
+    }
 
 
 @router.get("")
@@ -367,6 +406,7 @@ async def list_certifications(
     search: Optional[str] = None,
     type: Optional[str] = None,
     published: Optional[str] = None,
+    rejected_filter: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
     sort_by: str = "created_at",
@@ -385,6 +425,11 @@ async def list_certifications(
         filt["is_published"] = True
     elif published == "false":
         filt["is_published"] = {"$ne": True}
+
+    if rejected_filter == "only":
+        filt["is_rejected"] = True
+    elif rejected_filter == "exclude":
+        filt["is_rejected"] = {"$ne": True}
 
     # Filter by certificate type
     if type:
