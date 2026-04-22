@@ -9,6 +9,9 @@ import os
 import httpx
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from urllib.parse import quote
+
+from ..core.config import settings
 
 ASSETS_DIR = Path(__file__).parent.parent.parent.parent / "diamond-erp-front-end" / "src" / "assets"
 
@@ -21,6 +24,15 @@ def _b64_img(path: str) -> str:
 
 GAC_HEADER_B64 = _b64_img(str(ASSETS_DIR / "gac_card_first_image.png"))
 BG_PARTICLES_B64 = _b64_img(str(ASSETS_DIR / "BG-particles1.png"))
+
+
+def _certificate_public_url(cert_uuid: str) -> str:
+    frontend_base = (settings.FRONTEND_URL or "http://localhost:5173").rstrip("/")
+    return f"{frontend_base}/certificate/{cert_uuid}"
+
+
+def _fallback_qr_url(cert_uuid: str) -> str:
+    return f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={quote(_certificate_public_url(cert_uuid), safe='')}"
 
 CERTIFICATE_FIELD_CONFIG = {
     'single_diamond': ['gross_weight', 'diamond_weight', 'cut', 'clarity', 'color', 'conclusion', 'comment'],
@@ -81,7 +93,7 @@ async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
                 urls.add(url)
         # Add fallback QR URL
         if not cert.get('qr_code_signed_url') and cert.get('uuid'):
-            urls.add(f'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={cert["uuid"]}')
+            urls.add(_fallback_qr_url(cert["uuid"]))
 
     results = await asyncio.gather(*[_fetch_as_b64(url) for url in urls])
     return {url: b64 for url, b64 in zip(urls, results) if b64}
@@ -98,8 +110,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     qr_url = img_map.get(cert.get('qr_code_signed_url') or '') or ''
     # Fallback: generate QR from qrserver.com if no stored QR
     if not qr_url and cert.get('uuid'):
-        cert_uuid = cert['uuid']
-        qr_url = f'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={cert_uuid}'
+        qr_url = img_map.get(_fallback_qr_url(cert['uuid'])) or _fallback_qr_url(cert['uuid'])
     cert_number = _esc(cert.get('certificate_number') or '')
     description = _esc(cert.get('generated_description') or fields.get('description') or '')
 
@@ -112,7 +123,12 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
         qr_html = f'<img src="{_esc(qr_url)}" class="qr-code" alt="QR">'
 
     # Photo
-    photo_html = f'<img src="{_esc(photo_url)}" class="cert-photo" alt="Photo">' if photo_url else ''
+    photo_html = (
+        f'''<div class="cert-photo-frame">
+  <img src="{_esc(photo_url)}" class="cert-photo" alt="Photo">
+</div>'''
+        if photo_url else ''
+    )
 
     # Build field rows
     rows_html = ''
@@ -352,25 +368,36 @@ body {
   align-self: flex-start;
 }
 
-.cert-photo {
+.cert-photo-frame {
   position: absolute;
-  top: 94px;
-  right: 18px;
-  width: 50px;
-  height: 54px;
-  object-fit: contain;
-  padding: 0 6px 0 0;
+  top: 91px;
+  right: 22px;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   box-sizing: border-box;
   z-index: 2;
+}
+
+.cert-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  padding: 0 4px 0 0;
+  box-sizing: border-box;
 }
 
 .approx-label {
   font-size: 0.2em;
   position: absolute;
   font-weight: 500;
-  top: 94px;
+  top: 91px;
   right: 10px;
-  height: 46px;
+  height: 60px;
   line-height: 1;
   display: flex;
   align-items: center;

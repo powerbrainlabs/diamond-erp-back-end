@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     # Backend URL for image proxy and file serving
     BACKEND_URL: str = "http://localhost:8000"
+    FRONTEND_URL: str = "http://localhost:5173"
 
     # Super Admin seed
     SUPER_ADMIN_EMAIL: str = "superadmin@diamonderp.com"
