@@ -23,8 +23,9 @@ jobs:
           script: |
             cd /home/ec2-user/app
 
-            # Pull latest code
-            git pull origin main
+            # Pull latest code (hard reset to avoid local-change conflicts)
+            git fetch origin main
+            git reset --hard origin/main
 
             # Install any new dependencies
             pip3 install -r requirements.txt --quiet

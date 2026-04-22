@@ -10,7 +10,7 @@ import httpx
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-ASSETS_DIR = Path(__file__).parent.parent.parent.parent / "diamond-erp-front-end" / "src" / "assets"
+ASSETS_DIR = Path(__file__).parent.parent / "assets"
 
 def _b64_img(path: str) -> str:
     with open(path, "rb") as f:
