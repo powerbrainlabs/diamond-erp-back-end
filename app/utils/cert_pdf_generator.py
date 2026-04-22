@@ -97,12 +97,12 @@ async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
     """Fetch all cert images concurrently and return url→base64 map."""
     urls = set()
     for cert in certs:
-        for key in ('photo_signed_url', 'brand_logo_signed_url', 'qr_code_signed_url', 'rear_brand_logo_signed_url'):
+        for key in ('photo_signed_url', 'brand_logo_signed_url', 'rear_brand_logo_signed_url'):
             url = cert.get(key)
             if url:
                 urls.add(url)
         # Add fallback QR URL
-        if not cert.get('qr_code_signed_url') and cert.get('uuid'):
+        if cert.get('uuid'):
             urls.add(_fallback_qr_url(cert["uuid"]))
 
     results = await asyncio.gather(*[_fetch_as_b64(url) for url in urls])
@@ -117,10 +117,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 
     photo_url = img_map.get(cert.get('photo_signed_url') or '') or ''
     brand_logo_url = img_map.get(cert.get('brand_logo_signed_url') or '') or ''
-    qr_url = img_map.get(cert.get('qr_code_signed_url') or '') or ''
-    # Fallback: generate QR from qrserver.com if no stored QR
-    if not qr_url and cert.get('uuid'):
-        qr_url = img_map.get(_fallback_qr_url(cert['uuid'])) or _fallback_qr_url(cert['uuid'])
+    qr_url = img_map.get(_fallback_qr_url(cert['uuid'])) or _fallback_qr_url(cert['uuid']) if cert.get('uuid') else ''
     cert_number = _esc(cert.get('certificate_number') or '')
     description = _esc(cert.get('generated_description') or fields.get('description') or '')
 
