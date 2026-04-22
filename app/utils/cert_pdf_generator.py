@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 from ..core.config import settings
 
-ASSETS_DIR = Path(__file__).parent.parent.parent.parent / "diamond-erp-front-end" / "src" / "assets"
+ASSETS_DIR = Path(__file__).parent.parent / "assets"
 
 def _b64_img(path: str) -> str:
     with open(path, "rb") as f:
@@ -22,8 +22,18 @@ def _b64_img(path: str) -> str:
     mime = "image/png" if ext == "png" else "image/jpeg"
     return f"data:{mime};base64,{data}"
 
+def _build_font_face_css() -> str:
+    fonts_dir = ASSETS_DIR / "fonts"
+    css = ""
+    for weight, filename in [(400, "Poppins-Regular.ttf"), (500, "Poppins-Medium.ttf"), (600, "Poppins-SemiBold.ttf"), (700, "Poppins-Bold.ttf")]:
+        font_path = fonts_dir / filename
+        if font_path.exists():
+            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('file://{font_path}') format('truetype');}}\n"
+    return css
+
 GAC_HEADER_B64 = _b64_img(str(ASSETS_DIR / "gac_card_first_image.png"))
 BG_PARTICLES_B64 = _b64_img(str(ASSETS_DIR / "BG-particles1.png"))
+POPPINS_FONT_CSS = _build_font_face_css()
 
 
 def _certificate_public_url(cert_uuid: str) -> str:
@@ -273,8 +283,7 @@ def _render_card_back(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> str
 </div>'''
 
 
-CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+CSS = POPPINS_FONT_CSS + """
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
