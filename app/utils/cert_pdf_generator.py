@@ -22,11 +22,10 @@ def _b64_img(path: str) -> str:
 def _build_font_face_css() -> str:
     fonts_dir = ASSETS_DIR / "fonts"
     css = ""
-    for weight, filename in [(400, "Poppins-400.woff2"), (500, "Poppins-500.woff2"), (600, "Poppins-600.woff2"), (700, "Poppins-700.woff2")]:
+    for weight, filename in [(400, "Poppins-Regular.ttf"), (500, "Poppins-Medium.ttf"), (600, "Poppins-SemiBold.ttf"), (700, "Poppins-Bold.ttf")]:
         font_path = fonts_dir / filename
         if font_path.exists():
-            data = base64.b64encode(font_path.read_bytes()).decode()
-            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('data:font/woff2;base64,{data}') format('woff2');}}\n"
+            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('file://{font_path}') format('truetype');}}\n"
     return css
 
 GAC_HEADER_B64 = _b64_img(str(ASSETS_DIR / "gac_card_first_image.png"))
