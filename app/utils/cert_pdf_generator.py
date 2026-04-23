@@ -5,11 +5,14 @@ Renders the same HTML/CSS as the React frontend for pixel-perfect output.
 import asyncio
 import base64
 import io
+import logging
 import os
 import httpx
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from urllib.parse import quote
+
+logger = logging.getLogger(__name__)
 
 from ..core.config import settings
 
@@ -81,16 +84,19 @@ async def _fetch_as_b64(url: str) -> Optional[str]:
     """Fetch an image URL and return a base64 data URI, or None on failure."""
     if not url:
         return None
-    try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            r = await client.get(url)
-            if r.status_code != 200:
-                return None
-            content_type = r.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
-            data = base64.b64encode(r.content).decode()
-            return f"data:{content_type};base64,{data}"
-    except Exception:
-        return None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True, verify=False) as client:
+                r = await client.get(url)
+                if r.status_code != 200:
+                    logger.warning(f"Image fetch returned {r.status_code} for URL (attempt {attempt+1}): {url[:80]}")
+                    continue
+                content_type = r.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
+                data = base64.b64encode(r.content).decode()
+                return f"data:{content_type};base64,{data}"
+        except Exception as e:
+            logger.warning(f"Image fetch error (attempt {attempt+1}): {type(e).__name__}: {e} — URL: {url[:80]}")
+    return None
 
 
 async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
