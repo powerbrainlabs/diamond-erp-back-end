@@ -435,7 +435,7 @@ body {
   position: relative;
   padding-left: 10px;
   padding-right: 10px;
-  padding-bottom: 12px;
+  padding-bottom: 4px;
 }
 
 .bg-particles {
