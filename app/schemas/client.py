@@ -12,6 +12,8 @@ class ClientBase(BaseModel):
     address: Optional[str] = None
     gst_number: Optional[str] = None
     notes: Optional[str] = None
+    brand_logo_url: Optional[str] = None
+    rear_logo_url: Optional[str] = None
 
 
 class ClientCreate(ClientBase):
