@@ -4,14 +4,13 @@ Renders the same HTML/CSS as the React frontend for pixel-perfect output.
 """
 import asyncio
 import base64
-import io
-import os
 import httpx
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from urllib.parse import quote
 
 from ..core.config import settings
+from ..core.minio_client import minio_client
 
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
 
@@ -81,14 +80,35 @@ async def _fetch_as_b64(url: str) -> Optional[str]:
     """Fetch an image URL and return a base64 data URI, or None on failure."""
     if not url:
         return None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True, verify=False) as client:
+                r = await client.get(url)
+                if r.status_code != 200:
+                    continue
+                content_type = r.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
+                data = base64.b64encode(r.content).decode()
+                return f"data:{content_type};base64,{data}"
+        except Exception:
+            pass
+    return None
+
+
+def _storage_ref_to_b64(storage_ref: str) -> Optional[str]:
+    """Read an object like 'bucket/object' directly from storage and return a data URI."""
+    if not storage_ref or "/" not in storage_ref:
+        return None
     try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            r = await client.get(url)
-            if r.status_code != 200:
-                return None
-            content_type = r.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
-            data = base64.b64encode(r.content).decode()
+        bucket, object_name = storage_ref.split("/", 1)
+        response = minio_client.get_object(bucket, object_name)
+        try:
+            content = response.read()
+            content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+            data = base64.b64encode(content).decode()
             return f"data:{content_type};base64,{data}"
+        finally:
+            response.close()
+            response.release_conn()
     except Exception:
         return None
 
@@ -115,8 +135,16 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     cert_type = cert.get('type', '')
     group = schema.get('group', '')
 
-    photo_url = img_map.get(cert.get('photo_signed_url') or '') or ''
-    brand_logo_url = img_map.get(cert.get('brand_logo_signed_url') or '') or ''
+    photo_url = (
+        _storage_ref_to_b64(cert.get('photo_url') or '')
+        or img_map.get(cert.get('photo_signed_url') or '')
+        or ''
+    )
+    brand_logo_url = (
+        _storage_ref_to_b64(cert.get('brand_logo_url') or '')
+        or img_map.get(cert.get('brand_logo_signed_url') or '')
+        or ''
+    )
     qr_url = img_map.get(_fallback_qr_url(cert['uuid'])) or _fallback_qr_url(cert['uuid']) if cert.get('uuid') else ''
     cert_number = _esc(cert.get('certificate_number') or '')
     description = _esc(cert.get('generated_description') or fields.get('description') or '')
@@ -270,7 +298,12 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 
 def _render_card_back(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> str:
     rear_logo_url = cert.get('rear_brand_logo_signed_url') or cert.get('brand_logo_signed_url') or ''
-    rear_logo = img_map.get(rear_logo_url) or ''
+    rear_logo = (
+        _storage_ref_to_b64(cert.get('rear_brand_logo_url') or '')
+        or _storage_ref_to_b64(cert.get('brand_logo_url') or '')
+        or img_map.get(rear_logo_url)
+        or ''
+    )
     img_html = f'<img src="{_esc(rear_logo)}" class="back-logo" alt="Logo">' if rear_logo else ''
     return f'''
 <div class="cert-card back-card" data-cert-uuid="{_esc(cert.get('uuid',''))}">
