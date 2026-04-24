@@ -241,10 +241,10 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     row_count = rows_html.count('field-row')
     # Dense tiers (many rows — shrink to fit)
     PDF_DENSITY = {
-        'rows_13_plus': 'font-size:0.42em;line-height:7.5px;',
-        'rows_12':      'font-size:0.44em;line-height:8px;',
+        'rows_13_plus': 'font-size:0.44em;line-height:8px;',
+        'rows_12':      'font-size:0.46em;line-height:8.5px;',
         'rows_11':      'font-size:0.46em;line-height:8.5px;',
-        'rows_10':      'font-size:0.49em;line-height:9px;',
+        'rows_10':      'font-size:0.52em;line-height:10px;',
         # Sparse tiers (few rows — expand to fill)
         'rows_8_9':     'font-size:0.57em;line-height:12px;',
         'rows_7':       'font-size:0.55em;line-height:10px;',
