@@ -241,34 +241,23 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     row_count = rows_html.count('field-row')
     # Dense tiers (many rows — shrink to fit)
     PDF_DENSITY = {
-        'rows_13_plus': 'font-size:0.44em;line-height:8px;',
-        'rows_12':      'font-size:0.46em;line-height:8.5px;',
-        'rows_11':      'font-size:0.46em;line-height:8.5px;',
-        'rows_10':      'font-size:0.52em;line-height:10px;',
-        # Sparse tiers (few rows — expand to fill)
-        'rows_8_9':     'font-size:0.57em;line-height:12px;',
-        'rows_7':       'font-size:0.55em;line-height:10px;',
-        'rows_5_6':     'font-size:0.58em;line-height:11px;',
-        'rows_1_4':     'font-size:0.62em;line-height:13px;',
+        1:  'font-size:0.62em;line-height:13.5px;',
+        2:  'font-size:0.62em;line-height:13.5px;',
+        3:  'font-size:0.61em;line-height:13px;',
+        4:  'font-size:0.60em;line-height:12.5px;',
+        5:  'font-size:0.59em;line-height:12px;',
+        6:  'font-size:0.58em;line-height:11.5px;',
+        7:  'font-size:0.57em;line-height:11px;',
+        8:  'font-size:0.56em;line-height:10.5px;',
+        9:  'font-size:0.55em;line-height:10.25px;',
+        10: 'font-size:0.52em;line-height:10px;',
+        11: 'font-size:0.49em;line-height:9px;',
+        12: 'font-size:0.46em;line-height:8.5px;',
+        13: 'font-size:0.45em;line-height:8.25px;',
+        14: 'font-size:0.44em;line-height:8px;',
+        15: 'font-size:0.43em;line-height:7.75px;',
     }
-    if row_count >= 13:
-        density_style = PDF_DENSITY['rows_13_plus']
-    elif row_count == 12:
-        density_style = PDF_DENSITY['rows_12']
-    elif row_count == 11:
-        density_style = PDF_DENSITY['rows_11']
-    elif row_count == 10:
-        density_style = PDF_DENSITY['rows_10']
-    elif row_count <= 4:
-        density_style = PDF_DENSITY['rows_1_4']
-    elif row_count <= 6:
-        density_style = PDF_DENSITY['rows_5_6']
-    elif row_count == 7:
-        density_style = PDF_DENSITY['rows_7']
-    elif row_count <= 9:
-        density_style = PDF_DENSITY['rows_8_9']
-    else:
-        density_style = ''
+    density_style = PDF_DENSITY.get(min(max(row_count, 1), 15), PDF_DENSITY[15])
 
     return f'''
 <div class="cert-card" data-cert-uuid="{_esc(cert.get('uuid',''))}">
