@@ -128,11 +128,22 @@ async def create_certification(
         print(f"❌ Photo promotion failed: {str(e)}")
         raise
 
+    def _copy_client_logo(client_url: str) -> str:
+        """Copy a logo from client-logos bucket to certificates bucket."""
+        src_file_id = client_url.split("/", 1)[-1]
+        dest_file_id = f"{uuid.uuid4()}_{src_file_id}"
+        source = CopySource("client-logos", src_file_id)
+        minio_client.copy_object("certificates", dest_file_id, source)
+        return f"certificates/{dest_file_id}"
+
     try:
         if payload.logo_file_id:
             print(f"🔄 Promoting logo file: {payload.logo_file_id}")
             logo_url = promote_file_from_temp(payload.logo_file_id)
             print(f"✅ Logo promoted to: {logo_url}")
+        elif client.get("brand_logo_url"):
+            logo_url = _copy_client_logo(client["brand_logo_url"])
+            print(f"✅ Client brand logo copied to: {logo_url}")
     except Exception as e:
         print(f"❌ Logo promotion failed: {str(e)}")
         raise
@@ -142,6 +153,9 @@ async def create_certification(
             print(f"🔄 Promoting rear logo file: {payload.rear_logo_file_id}")
             rear_logo_url = promote_file_from_temp(payload.rear_logo_file_id)
             print(f"✅ Rear logo promoted to: {rear_logo_url}")
+        elif client.get("rear_logo_url"):
+            rear_logo_url = _copy_client_logo(client["rear_logo_url"])
+            print(f"✅ Client rear logo copied to: {rear_logo_url}")
     except Exception as e:
         print(f"❌ Rear logo promotion failed: {str(e)}")
         raise

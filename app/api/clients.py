@@ -3,11 +3,13 @@ from typing import Optional, Literal
 from datetime import datetime
 import uuid
 from bson import ObjectId
+from pydantic import BaseModel
 
 from ..core.dependencies import require_admin, require_staff
 from ..db.database import get_db
 from ..schemas.client import ClientCreate, ClientUpdate
 from ..utils.serializers import dump_client
+from ..core.minio_client import minio_client, CopySource
 
 router = APIRouter(prefix="/api/clients", tags=["Clients"])
 
@@ -131,6 +133,53 @@ async def update_client(uuid: str, payload: ClientUpdate, current_user: dict = D
 
     updates["updated_at"] = datetime.utcnow()
     await db.clients.update_one({"_id": doc["_id"]}, {"$set": updates})
+    fresh = await db.clients.find_one({"_id": doc["_id"]})
+    return dump_client(fresh)
+
+
+# ✅ Update Client Logos
+class ClientLogosUpdate(BaseModel):
+    brand_logo_file_id: Optional[str] = None
+    rear_logo_file_id: Optional[str] = None
+
+
+def _promote_logo(file_id: str, old_url: Optional[str] = None) -> str:
+    """Promote a logo from cert-temp to client-logos bucket, delete old one."""
+    src = "cert-temp"
+    dest = "client-logos"
+    try:
+        minio_client.stat_object(src, file_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"Logo file not found in temp storage: {file_id}")
+    source = CopySource(src, file_id)
+    minio_client.copy_object(dest, file_id, source)
+    minio_client.remove_object(src, file_id)
+    if old_url:
+        old_file_id = old_url.split("/", 1)[-1]
+        try:
+            minio_client.remove_object(dest, old_file_id)
+        except Exception:
+            pass
+    return f"{dest}/{file_id}"
+
+
+@router.put("/{uuid}/logos")
+async def update_client_logos(uuid: str, payload: ClientLogosUpdate, current_user: dict = Depends(require_staff)):
+    db = await get_db()
+    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    updates = {}
+    if payload.brand_logo_file_id:
+        updates["brand_logo_url"] = _promote_logo(payload.brand_logo_file_id, doc.get("brand_logo_url"))
+    if payload.rear_logo_file_id:
+        updates["rear_logo_url"] = _promote_logo(payload.rear_logo_file_id, doc.get("rear_logo_url"))
+
+    if updates:
+        updates["updated_at"] = datetime.utcnow()
+        await db.clients.update_one({"_id": doc["_id"]}, {"$set": updates})
+
     fresh = await db.clients.find_one({"_id": doc["_id"]})
     return dump_client(fresh)
 

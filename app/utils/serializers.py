@@ -1,6 +1,7 @@
 from typing import Any
 from bson import ObjectId
 from datetime import datetime
+from .minio_helpers import get_presigned_url
 
 def oid(value) -> ObjectId:
     return value if isinstance(value, ObjectId) else ObjectId(str(value))
@@ -43,6 +44,17 @@ def dump_client(doc):
             "email": created_by.get("email"),
         }
     
+    brand_logo_url = doc.get("brand_logo_url")
+    rear_logo_url = doc.get("rear_logo_url")
+
+    def _logo_signed_url(url: str | None) -> str | None:
+        if not url:
+            return None
+        parts = url.split("/", 1)
+        if len(parts) == 2:
+            return get_presigned_url(parts[0], parts[1])
+        return None
+
     return {
         "id": doc["uuid"],
         "name": doc["name"],
@@ -52,6 +64,10 @@ def dump_client(doc):
         "address": doc.get("address"),
         "gst_number": doc.get("gst_number"),
         "notes": doc.get("notes"),
+        "brand_logo_url": brand_logo_url,
+        "rear_logo_url": rear_logo_url,
+        "brand_logo_signed_url": _logo_signed_url(brand_logo_url),
+        "rear_logo_signed_url": _logo_signed_url(rear_logo_url),
         "created_by": created_by,
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],
