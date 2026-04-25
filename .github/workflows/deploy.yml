@@ -37,8 +37,8 @@ jobs:
               fc-cache -f /home/ec2-user/.local/share/fonts/
             fi
 
-            # Install any new dependencies
-            pip3 install -r requirements.txt --quiet
+            # Install any new dependencies (use python3.11)
+            python3.11 -m pip install -r requirements.txt --quiet --user
 
             # Restart the service
             sudo systemctl restart diamond-erp
