@@ -721,28 +721,50 @@ async def download_certificates_pdf(payload: DownloadPdfPayload):
     from ..utils.cert_pdf_generator import generate_certificates_pdf_async
 
     db = await get_db()
+    raw_docs = await db.certifications.find(
+        {"uuid": {"$in": payload.uuids}, "is_deleted": False}
+    ).to_list(length=len(payload.uuids))
+
+    if not raw_docs:
+        raise HTTPException(status_code=404, detail="No matching certificates found")
+
+    order_map = {uuid: index for index, uuid in enumerate(payload.uuids)}
+    docs_by_uuid = {}
+    schema_uuids = set()
+
+    for raw_doc in raw_docs:
+        doc = attach_presigned_urls(serialize_mongo_doc(raw_doc))
+        schema_uuid = doc.get("schema_uuid") or doc.get("category_uuid") or doc.get("category_id")
+        if schema_uuid:
+            schema_uuids.add(schema_uuid)
+        if doc.get("qr_code_url"):
+            try:
+                bucket, file_id = doc["qr_code_url"].split("/", 1)
+                doc["qr_code_signed_url"] = get_presigned_url(bucket, file_id)
+            except Exception:
+                pass
+        docs_by_uuid[doc["uuid"]] = doc
+
+    schemas = await db.category_schemas.find(
+        {"uuid": {"$in": list(schema_uuids)}}
+    ).to_list(length=len(schema_uuids) or None)
+    schema_map = {schema["uuid"]: serialize_mongo_doc(schema) for schema in schemas}
+
     certs = []
     for cert_uuid in payload.uuids:
-        doc = await db.certifications.find_one({"uuid": cert_uuid, "is_deleted": False})
-        if doc:
-            doc = attach_presigned_urls(serialize_mongo_doc(doc))
-            schema_uuid = doc.get("schema_uuid") or doc.get("category_uuid") or doc.get("category_id")
-            if schema_uuid:
-                schema = await db.category_schemas.find_one({"uuid": schema_uuid})
-                if schema:
-                    doc["schema"] = serialize_mongo_doc(schema)
-                    description_template = schema.get("description_template")
-                    if description_template and doc.get("fields"):
-                        doc["generated_description"] = render_description_template(
-                            description_template, doc["fields"]
-                        )
-            if doc.get("qr_code_url"):
-                try:
-                    bucket, file_id = doc["qr_code_url"].split("/", 1)
-                    doc["qr_code_signed_url"] = get_presigned_url(bucket, file_id)
-                except Exception:
-                    pass
-            certs.append(doc)
+        doc = docs_by_uuid.get(cert_uuid)
+        if not doc:
+            continue
+        schema_uuid = doc.get("schema_uuid") or doc.get("category_uuid") or doc.get("category_id")
+        schema = schema_map.get(schema_uuid)
+        if schema:
+            doc["schema"] = schema
+            description_template = schema.get("description_template")
+            if description_template and doc.get("fields"):
+                doc["generated_description"] = render_description_template(
+                    description_template, doc["fields"]
+                )
+        certs.append(doc)
 
     if not certs:
         raise HTTPException(status_code=404, detail="No matching certificates found")
