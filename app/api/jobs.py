@@ -145,6 +145,19 @@ async def list_jobs(
     cursor = db.jobs.find(filt).sort([(sort_field, sort_dir)]).skip(skip).limit(limit)
     items = [dump_job(doc) async for doc in cursor]
 
+    # Enrich each job with client name and logo URLs
+    client_ids = list({j["client_id"] for j in items if j.get("client_id")})
+    if client_ids:
+        from ..utils.serializers import dump_client
+        clients_cursor = db.clients.find({"uuid": {"$in": client_ids}})
+        clients_map = {doc["uuid"]: dump_client(doc) async for doc in clients_cursor}
+        for job in items:
+            client = clients_map.get(job.get("client_id"))
+            if client:
+                job["client_name"] = client.get("name", "")
+                job["client_brand_logo_signed_url"] = client.get("brand_logo_signed_url")
+                job["client_rear_logo_signed_url"] = client.get("rear_logo_signed_url")
+
     total_pages = (total + limit - 1) // limit
     return {
         "total": total,
