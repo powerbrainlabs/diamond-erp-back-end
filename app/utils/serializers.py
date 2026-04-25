@@ -47,7 +47,7 @@ def dump_client(doc):
     brand_logo_url = doc.get("brand_logo_url")
     rear_logo_url = doc.get("rear_logo_url")
 
-    def _logo_signed_url(url: str | None) -> str | None:
+    def _logo_signed_url(url):
         if not url:
             return None
         parts = url.split("/", 1)
