@@ -267,7 +267,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             is_bold = fname in BOLD_FIELDS
             bold_style = 'font-weight:bold;' if is_bold else ''
             capitalize = 'text-transform:capitalize;' if fname == 'conclusion' else ''
-            row_class = 'field-row full-width' if is_full else 'field-row'
+            row_class = 'field-row full-width comment-row' if is_comment else ('field-row full-width' if is_full else 'field-row')
             val_class = 'value comment-value' if is_comment else ('value desc-value' if is_full else 'value')
             chars_per_line = 42 if is_full else 24
             max_lines = 1 if is_comment else (3 if fname in ('conclusion', 'microscopic_obs') else 2)
@@ -279,24 +279,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 
     # Density: estimate visual lines so wrapped values affect PDF fitting.
     row_count = max(visual_row_count, rows_html.count('field-row'))
-    PDF_DENSITY = {
-        1:  'font-size:0.61em;line-height:13px;',
-        2:  'font-size:0.61em;line-height:13px;',
-        3:  'font-size:0.60em;line-height:12.5px;',
-        4:  'font-size:0.59em;line-height:12px;',
-        5:  'font-size:0.58em;line-height:11.5px;',
-        6:  'font-size:0.57em;line-height:11px;',
-        7:  'font-size:0.56em;line-height:10.5px;',
-        8:  'font-size:0.55em;line-height:10px;',
-        9:  'font-size:0.54em;line-height:9.8px;',
-        10: 'font-size:0.52em;line-height:9.4px;',
-        11: 'font-size:0.50em;line-height:9px;',
-        12: 'font-size:0.48em;line-height:8.6px;',
-        13: 'font-size:0.46em;line-height:8.2px;',
-        14: 'font-size:0.44em;line-height:7.8px;',
-        15: 'font-size:0.42em;line-height:7.4px;',
-    }
-    density_style = PDF_DENSITY.get(min(max(row_count, 1), 15), PDF_DENSITY[15])
+    density_style = 'font-size:0.62em;line-height:10.8px;'
 
     return f'''
 <div class="cert-card" data-cert-uuid="{_esc(cert.get('uuid',''))}" data-row-count="{row_count}">
@@ -521,9 +504,22 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
+  font-size: 0.87em;
 }
 
 .field-row.full-width { width: 100%; }
+
+.comment-row {
+  width: calc(100% + 34px) !important;
+}
+
+.comment-row .label {
+  width: 82px;
+}
+
+.comment-row .sep {
+  margin: 0 5px;
+}
 
 .label {
   width: 82px;
@@ -554,14 +550,14 @@ body {
 .comment-value {
   flex: 1;
   min-width: 0;
+  font-size: 1em;
   line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: normal;
-  font-size: 0.78em;
-  letter-spacing: -0.05em;
-  word-spacing: -0.06em;
+  letter-spacing: -0.02em;
+  word-spacing: -0.02em;
 }
 
 .card-footer {
