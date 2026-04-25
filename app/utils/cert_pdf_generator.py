@@ -249,14 +249,14 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
                         unit = 'ct' if (float(display) if display.replace('.', '', 1).isdigit() else 1) < 1 else 'cts'
                     display = f'{display} {unit}'
 
-            is_full = field.get('field_type') in ('textarea', 'custom') or fname in ('description', 'comment')
+            is_full = field.get('field_type') in ('textarea', 'custom') or fname in ('description',)
             is_bold = fname in BOLD_FIELDS
             bold_style = 'font-weight:bold;' if is_bold else ''
             capitalize = 'text-transform:capitalize;' if fname == 'conclusion' else ''
             row_class = 'field-row full-width' if is_full else 'field-row'
             val_class = 'value desc-value' if is_full else 'value'
             chars_per_line = 42 if is_full else 24
-            max_lines = 3 if fname in ('comment', 'conclusion', 'microscopic_obs') else 2
+            max_lines = 1 if fname == 'comment' else (3 if fname in ('conclusion', 'microscopic_obs') else 2)
             visual_row_count += _estimate_text_lines(display, chars_per_line=chars_per_line, min_lines=1, max_lines=max_lines)
 
             rows_html += f'''<div class="{row_class}">
