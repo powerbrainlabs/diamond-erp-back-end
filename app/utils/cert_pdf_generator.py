@@ -76,6 +76,22 @@ def _esc(s: str) -> str:
     return (s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
 
 
+def _estimate_text_lines(value: Any, chars_per_line: int, min_lines: int = 1, max_lines: int = 4) -> int:
+    text = str(value or '').strip()
+    if not text:
+        return 0
+
+    line_count = 0
+    for part in text.splitlines() or ['']:
+        segment = part.strip()
+        if not segment:
+            line_count += 1
+            continue
+        line_count += max(1, (len(segment) + chars_per_line - 1) // chars_per_line)
+
+    return max(min_lines, min(line_count, max_lines))
+
+
 async def _fetch_as_b64(url: str) -> Optional[str]:
     """Fetch an image URL and return a base64 data URI, or None on failure."""
     if not url:
@@ -167,29 +183,36 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 
     # Build field rows
     rows_html = ''
+    visual_row_count = 0
 
     if cert_type == 'custom':
         if description:
+            visual_row_count += _estimate_text_lines(description, chars_per_line=42, min_lines=1, max_lines=3)
             rows_html += f'''<div class="field-row full-width">
                 <span class="label">Description</span><span class="sep">:</span>
                 <span class="value desc-value">{description}</span></div>'''
+        visual_row_count += _estimate_text_lines(cert_number, chars_per_line=24)
         rows_html += f'''<div class="field-row">
             <span class="label">Certificate No</span><span class="sep">:</span>
             <span class="value">{cert_number}</span></div>'''
         for cf in (fields.get('custom_fields') or []):
             if cf.get('key') or cf.get('value'):
+                custom_value = _esc(str(cf.get("value", "")))
+                visual_row_count += _estimate_text_lines(custom_value, chars_per_line=24, min_lines=1, max_lines=3)
                 rows_html += f'''<div class="field-row">
                     <span class="label">{_esc(cf.get("key",""))}</span><span class="sep">:</span>
-                    <span class="value">{_esc(str(cf.get("value","")))}</span></div>'''
+                    <span class="value">{custom_value}</span></div>'''
     else:
         allowed = CERTIFICATE_FIELD_CONFIG.get(group, [])
         schema_fields = schema.get('fields') or []
 
         if description:
+            visual_row_count += _estimate_text_lines(description, chars_per_line=42, min_lines=1, max_lines=3)
             rows_html += f'''<div class="field-row full-width">
                 <span class="label">Description</span><span class="sep">:</span>
                 <span class="value desc-value">{description}</span></div>'''
 
+        visual_row_count += _estimate_text_lines(cert_number, chars_per_line=24)
         rows_html += f'''<div class="field-row">
             <span class="label">Certificate No</span><span class="sep">:</span>
             <span class="value">{cert_number}</span></div>'''
@@ -232,35 +255,37 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             capitalize = 'text-transform:capitalize;' if fname == 'conclusion' else ''
             row_class = 'field-row full-width' if is_full else 'field-row'
             val_class = 'value desc-value' if is_full else 'value'
+            chars_per_line = 42 if is_full else 24
+            max_lines = 3 if fname in ('comment', 'conclusion', 'microscopic_obs') else 2
+            visual_row_count += _estimate_text_lines(display, chars_per_line=chars_per_line, min_lines=1, max_lines=max_lines)
 
             rows_html += f'''<div class="{row_class}">
                 <span class="label" style="{bold_style}">{label}</span><span class="sep">:</span>
                 <span class="{val_class}" style="{bold_style}{capitalize}">{display}</span></div>'''
 
-    # Density: count visible rows to scale font down if too many
-    row_count = rows_html.count('field-row')
-    # Dense tiers (many rows — shrink to fit)
+    # Density: estimate visual lines so wrapped values affect PDF fitting.
+    row_count = max(visual_row_count, rows_html.count('field-row'))
     PDF_DENSITY = {
-        1:  'font-size:0.62em;line-height:13.5px;',
-        2:  'font-size:0.62em;line-height:13.5px;',
-        3:  'font-size:0.61em;line-height:13px;',
-        4:  'font-size:0.60em;line-height:12.5px;',
-        5:  'font-size:0.59em;line-height:12px;',
-        6:  'font-size:0.58em;line-height:11.5px;',
-        7:  'font-size:0.57em;line-height:11px;',
-        8:  'font-size:0.56em;line-height:10.5px;',
-        9:  'font-size:0.55em;line-height:10.25px;',
-        10: 'font-size:0.52em;line-height:10px;',
-        11: 'font-size:0.49em;line-height:9px;',
-        12: 'font-size:0.46em;line-height:8.5px;',
-        13: 'font-size:0.45em;line-height:8.25px;',
-        14: 'font-size:0.44em;line-height:8px;',
-        15: 'font-size:0.43em;line-height:7.75px;',
+        1:  'font-size:0.61em;line-height:13px;',
+        2:  'font-size:0.61em;line-height:13px;',
+        3:  'font-size:0.60em;line-height:12.5px;',
+        4:  'font-size:0.59em;line-height:12px;',
+        5:  'font-size:0.58em;line-height:11.5px;',
+        6:  'font-size:0.57em;line-height:11px;',
+        7:  'font-size:0.56em;line-height:10.5px;',
+        8:  'font-size:0.55em;line-height:10px;',
+        9:  'font-size:0.54em;line-height:9.8px;',
+        10: 'font-size:0.52em;line-height:9.4px;',
+        11: 'font-size:0.50em;line-height:9px;',
+        12: 'font-size:0.48em;line-height:8.6px;',
+        13: 'font-size:0.46em;line-height:8.2px;',
+        14: 'font-size:0.44em;line-height:7.8px;',
+        15: 'font-size:0.42em;line-height:7.4px;',
     }
     density_style = PDF_DENSITY.get(min(max(row_count, 1), 15), PDF_DENSITY[15])
 
     return f'''
-<div class="cert-card" data-cert-uuid="{_esc(cert.get('uuid',''))}">
+<div class="cert-card" data-cert-uuid="{_esc(cert.get('uuid',''))}" data-row-count="{row_count}">
   <header class="card-header">
     <img src="{GAC_HEADER_B64}" class="gac-header-img" alt="GAC">
     <div class="header-right">
@@ -470,6 +495,7 @@ body {
   z-index: 1;
   font-size: 0.52em;
   line-height: 9.2px;
+  overflow: hidden;
 }
 
 .field-row {
@@ -536,6 +562,88 @@ body {
 }
 """
 
+FIT_SCRIPT = """
+<script>
+(() => {
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  function fitCard(card) {
+    const fields = card.querySelector('.fields-area');
+    const footer = card.querySelector('.card-footer');
+    if (!fields || !footer) return;
+    const rowCount = Number(card.dataset.rowCount || 0);
+
+    const computed = window.getComputedStyle(fields);
+    let fontSize = parseFloat(computed.fontSize);
+    let lineHeight = parseFloat(computed.lineHeight);
+    if (!fontSize || !lineHeight) return;
+
+    const minFont = Math.max(5.4, fontSize * 0.78);
+    const maxFont = Math.min(10.6, fontSize * 1.55);
+    const minLine = Math.max(6.8, lineHeight * 0.78);
+    const maxLine = Math.min(14.8, lineHeight * 1.55);
+
+    const reservedGap = rowCount >= 10 ? 6 : 4;
+
+    for (let i = 0; i < 12; i += 1) {
+      const fieldsRect = fields.getBoundingClientRect();
+      const footerRect = footer.getBoundingClientRect();
+      const availableHeight = footerRect.top - fieldsRect.top - reservedGap;
+      const contentHeight = fields.scrollHeight;
+      if (availableHeight <= 0 || contentHeight <= 0) break;
+
+      const ratio = availableHeight / contentHeight;
+      if (ratio >= 0.985 && ratio <= 1.03) break;
+
+      const step = clamp(ratio, 0.88, 1.12);
+      const nextFont = clamp(fontSize * step, minFont, maxFont);
+      const nextLine = clamp(lineHeight * step, minLine, maxLine);
+      if (Math.abs(nextFont - fontSize) < 0.05 && Math.abs(nextLine - lineHeight) < 0.05) break;
+
+      fontSize = nextFont;
+      lineHeight = nextLine;
+      fields.style.fontSize = `${fontSize.toFixed(2)}px`;
+      fields.style.lineHeight = `${lineHeight.toFixed(2)}px`;
+    }
+
+    const finalFieldsRect = fields.getBoundingClientRect();
+    const finalFooterRect = footer.getBoundingClientRect();
+    const finalAvailable = finalFooterRect.top - finalFieldsRect.top - reservedGap;
+    const finalContent = fields.scrollHeight;
+
+    if (finalContent > finalAvailable) {
+      const shrinkRatio = clamp(finalAvailable / finalContent, 0.88, 0.98);
+      fontSize = clamp(fontSize * shrinkRatio, minFont, maxFont);
+      lineHeight = clamp(lineHeight * shrinkRatio, minLine, maxLine);
+      fields.style.fontSize = `${fontSize.toFixed(2)}px`;
+      fields.style.lineHeight = `${lineHeight.toFixed(2)}px`;
+      return;
+    }
+
+    if (rowCount <= 8 && finalAvailable > finalContent + 10) {
+      const fillRatio = clamp(finalAvailable / finalContent, 1, 1.03);
+      fields.style.fontSize = `${clamp(fontSize * fillRatio, minFont, maxFont).toFixed(2)}px`;
+      fields.style.lineHeight = `${clamp(lineHeight * fillRatio, minLine, maxLine).toFixed(2)}px`;
+    }
+  }
+
+  function run() {
+    document.querySelectorAll('.cert-card:not(.back-card)').forEach(fitCard);
+    window.__cardsFitted = true;
+  }
+
+  const start = () => requestAnimationFrame(() => requestAnimationFrame(run));
+
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(start).catch(start);
+  } else {
+    window.addEventListener('load', start, { once: true });
+    setTimeout(start, 150);
+  }
+})();
+</script>
+"""
+
 
 def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, include_back: bool = True) -> str:
     CARDS_PER_PAGE = 10
@@ -570,6 +678,7 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
 </head>
 <body>
 {pages_html}
+{FIT_SCRIPT}
 </body>
 </html>"""
 
@@ -581,6 +690,7 @@ def _render_pdf_sync(html: str) -> bytes:
         browser = p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage'])
         page = browser.new_page()
         page.set_content(html, wait_until='networkidle')
+        page.wait_for_function("window.__cardsFitted === true", timeout=5000)
         page.wait_for_timeout(800)
         pdf_bytes = page.pdf(
             format='A4',
