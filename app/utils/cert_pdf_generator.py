@@ -54,6 +54,18 @@ CERTIFICATE_FIELD_CONFIG = {
 BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion', 'comment'}
 
 
+def _normalize_display_text(value: Any) -> str:
+    if value is None:
+        return ""
+
+    import re
+
+    text = str(value)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    return text.strip()
+
+
 def _format_value(value, field_type):
     if value is None or value == '':
         return ''
@@ -66,10 +78,10 @@ def _format_value(value, field_type):
             parts = [v.strip() for v in re.split(r'[\s,]+', value) if v.strip()]
             return 'x'.join(parts)
     if isinstance(value, list):
-        return ', '.join(str(v) for v in value)
+        return _normalize_display_text(', '.join(str(v) for v in value))
     if isinstance(value, dict):
-        return str(value)
-    return str(value)
+        return _normalize_display_text(str(value))
+    return _normalize_display_text(value)
 
 
 def _esc(s: str) -> str:
@@ -162,8 +174,8 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
         or ''
     )
     qr_url = img_map.get(_fallback_qr_url(cert['uuid'])) or _fallback_qr_url(cert['uuid']) if cert.get('uuid') else ''
-    cert_number = _esc(cert.get('certificate_number') or '')
-    description = _esc(cert.get('generated_description') or fields.get('description') or '')
+    cert_number = _esc(_normalize_display_text(cert.get('certificate_number') or ''))
+    description = _esc(_normalize_display_text(cert.get('generated_description') or fields.get('description') or ''))
 
     # Header images
     brand_logo_html = ''
@@ -197,10 +209,10 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             <span class="value">{cert_number}</span></div>'''
         for cf in (fields.get('custom_fields') or []):
             if cf.get('key') or cf.get('value'):
-                custom_value = _esc(str(cf.get("value", "")))
+                custom_value = _esc(_normalize_display_text(cf.get("value", "")))
                 visual_row_count += _estimate_text_lines(custom_value, chars_per_line=24, min_lines=1, max_lines=3)
                 rows_html += f'''<div class="field-row">
-                    <span class="label">{_esc(cf.get("key",""))}</span><span class="sep">:</span>
+                    <span class="label">{_esc(_normalize_display_text(cf.get("key", "")))}</span><span class="sep">:</span>
                     <span class="value">{custom_value}</span></div>'''
     else:
         allowed = CERTIFICATE_FIELD_CONFIG.get(group, [])
@@ -229,18 +241,18 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             if raw is None or raw == '':
                 continue
 
-            label = _esc(field.get('label', fname).replace(r'\s*\([^)]*\)', ''))
+            label = _normalize_display_text(field.get('label', fname))
             # Replace stone weight label with gemstone name
             import re
             m = re.match(r'^(.+)_stone_w', fname)
             if m:
                 gem_name = fields.get(f'{m.group(1)}_gemstone')
                 if gem_name:
-                    label = _esc(f'{gem_name} Weight')
+                    label = _normalize_display_text(f'{gem_name} Weight')
 
             if field.get('field_type') == 'custom' and isinstance(raw, dict):
-                label = _esc(raw.get('custom_label', label))
-                display = _esc(str(raw.get('custom_value', '')))
+                label = _normalize_display_text(raw.get('custom_label', label))
+                display = _esc(_normalize_display_text(raw.get('custom_value', '')))
             else:
                 display = _esc(_format_value(raw, field.get('field_type', '')))
                 unit = field.get('unit', '')
@@ -248,15 +260,17 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
                     if unit.lower() in ('cts', 'ct'):
                         unit = 'ct' if (float(display) if display.replace('.', '', 1).isdigit() else 1) < 1 else 'cts'
                     display = f'{display} {unit}'
+            label = _esc(label)
 
-            is_full = field.get('field_type') in ('textarea', 'custom') or fname in ('description',)
+            is_comment = fname in ('comment', 'comments')
+            is_full = is_comment or field.get('field_type') in ('textarea', 'custom') or fname in ('description',)
             is_bold = fname in BOLD_FIELDS
             bold_style = 'font-weight:bold;' if is_bold else ''
             capitalize = 'text-transform:capitalize;' if fname == 'conclusion' else ''
             row_class = 'field-row full-width' if is_full else 'field-row'
-            val_class = 'value desc-value' if is_full else 'value'
+            val_class = 'value comment-value' if is_comment else ('value desc-value' if is_full else 'value')
             chars_per_line = 42 if is_full else 24
-            max_lines = 1 if fname == 'comment' else (3 if fname in ('conclusion', 'microscopic_obs') else 2)
+            max_lines = 1 if is_comment else (3 if fname in ('conclusion', 'microscopic_obs') else 2)
             visual_row_count += _estimate_text_lines(display, chars_per_line=chars_per_line, min_lines=1, max_lines=max_lines)
 
             rows_html += f'''<div class="{row_class}">
@@ -305,8 +319,8 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
         {rows_html}
       </div>
     </div>
+    <div class="card-footer">For further information visit <b>www.thegac.in</b></div>
   </div>
-  <div class="card-footer">For further information visit <b>www.thegac.in</b></div>
 </div>'''
 
 
@@ -463,6 +477,10 @@ body {
 
 .card-body {
   margin-top: 48px;
+  height: calc(100% - 48px);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
 .cert-title {
@@ -476,7 +494,8 @@ body {
   position: relative;
   padding-left: 10px;
   padding-right: 10px;
-  padding-bottom: 12px;
+  padding-bottom: 1px;
+  flex: 1;
 }
 
 .bg-particles {
@@ -532,13 +551,24 @@ body {
   min-width: 0;
 }
 
+.comment-value {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+  font-size: 0.78em;
+  letter-spacing: -0.05em;
+  word-spacing: -0.06em;
+}
+
 .card-footer {
-  position: absolute;
-  bottom: 5px;
-  left: 0;
   width: 100%;
   text-align: center;
   font-size: 0.39em;
+  padding-bottom: 1px;
   background: white;
   z-index: 3;
 }
@@ -583,7 +613,7 @@ FIT_SCRIPT = """
     const minLine = Math.max(6.8, lineHeight * 0.78);
     const maxLine = Math.min(14.8, lineHeight * 1.55);
 
-    const reservedGap = rowCount >= 10 ? 6 : 4;
+    const reservedGap = rowCount >= 10 ? 3.5 : rowCount <= 4 ? 1.5 : 2;
 
     for (let i = 0; i < 12; i += 1) {
       const fieldsRect = fields.getBoundingClientRect();
@@ -620,8 +650,8 @@ FIT_SCRIPT = """
       return;
     }
 
-    if (rowCount <= 8 && finalAvailable > finalContent + 10) {
-      const fillRatio = clamp(finalAvailable / finalContent, 1, 1.03);
+    if (rowCount <= 10 && finalAvailable > finalContent + 4) {
+      const fillRatio = clamp(finalAvailable / finalContent, 1, rowCount <= 4 ? 1.1 : rowCount <= 8 ? 1.06 : 1.04);
       fields.style.fontSize = `${clamp(fontSize * fillRatio, minFont, maxFont).toFixed(2)}px`;
       fields.style.lineHeight = `${clamp(lineHeight * fillRatio, minLine, maxLine).toFixed(2)}px`;
     }
