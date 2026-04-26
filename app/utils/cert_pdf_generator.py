@@ -51,7 +51,7 @@ CERTIFICATE_FIELD_CONFIG = {
     'double_mounded': ['gross_weight', 'primary_stone_weight', 'secondary_stone_weight', 'shape', 'sg', 'ri', 'hardness', 'microscopic_obs', 'conclusion'],
     'navaratna': ['gross_weight', 'diamond_weight', 'cut', 'color', 'clarity', 'conclusion', 'comment'],
 }
-BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion', 'comment'}
+BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion'}
 
 
 def _normalize_display_text(value: Any) -> str:
@@ -262,15 +262,15 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
                     display = f'{display} {unit}'
             label = _esc(label)
 
-            is_comment = fname in ('comment', 'comments')
+            is_comment = fname in ('comment', 'comments', 'microscopic_obs')
             is_full = is_comment or field.get('field_type') in ('textarea', 'custom') or fname in ('description',)
             is_bold = fname in BOLD_FIELDS
             bold_style = 'font-weight:bold;' if is_bold else ''
             capitalize = 'text-transform:capitalize;' if fname == 'conclusion' else ''
-            row_class = 'field-row full-width comment-row' if is_comment else ('field-row full-width' if is_full else 'field-row')
+            row_class = 'field-row full-width' if is_comment or is_full else 'field-row'
             val_class = 'value comment-value' if is_comment else ('value desc-value' if is_full else 'value')
             chars_per_line = 42 if is_full else 24
-            max_lines = 1 if is_comment else (3 if fname in ('conclusion', 'microscopic_obs') else 2)
+            max_lines = 1 if is_comment else (3 if fname == 'conclusion' else 2)
             visual_row_count += _estimate_text_lines(display, chars_per_line=chars_per_line, min_lines=1, max_lines=max_lines)
 
             rows_html += f'''<div class="{row_class}">
@@ -509,17 +509,6 @@ body {
 
 .field-row.full-width { width: 100%; }
 
-.comment-row {
-  width: calc(100% + 34px) !important;
-}
-
-.comment-row .label {
-  width: 82px;
-}
-
-.comment-row .sep {
-  margin: 0 5px;
-}
 
 .label {
   width: 82px;
@@ -550,14 +539,11 @@ body {
 .comment-value {
   flex: 1;
   min-width: 0;
-  font-size: 1em;
   line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: normal;
-  letter-spacing: -0.02em;
-  word-spacing: -0.02em;
 }
 
 .card-footer {
