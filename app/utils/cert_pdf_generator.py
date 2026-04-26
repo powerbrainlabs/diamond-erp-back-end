@@ -476,7 +476,7 @@ body {
 .cert-details {
   position: relative;
   padding-left: 10px;
-  padding-right: 82px;
+  padding-right: 10px;
   padding-bottom: 1px;
   flex: 1;
 }
