@@ -4,7 +4,6 @@ Renders the same HTML/CSS as the React frontend for pixel-perfect output.
 """
 import asyncio
 import base64
-import threading
 import httpx
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -34,9 +33,6 @@ def _build_font_face_css() -> str:
 GAC_HEADER_B64 = _b64_img(str(ASSETS_DIR / "gac_card_first_image.png"))
 BG_PARTICLES_B64 = _b64_img(str(ASSETS_DIR / "BG-particles1.png"))
 POPPINS_FONT_CSS = _build_font_face_css()
-_PLAYWRIGHT = None
-_BROWSER = None
-_BROWSER_LOCK = threading.Lock()
 
 
 def _certificate_public_url(cert_uuid: str) -> str:
@@ -55,7 +51,7 @@ CERTIFICATE_FIELD_CONFIG = {
     'double_mounded': ['gross_weight', 'primary_stone_weight', 'secondary_stone_weight', 'shape', 'sg', 'ri', 'hardness', 'microscopic_obs', 'conclusion'],
     'navaratna': ['gross_weight', 'diamond_weight', 'cut', 'color', 'clarity', 'conclusion', 'comment'],
 }
-BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion'}
+BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion', 'comment'}
 
 
 def _normalize_display_text(value: Any) -> str:
@@ -108,18 +104,19 @@ def _estimate_text_lines(value: Any, chars_per_line: int, min_lines: int = 1, ma
     return max(min_lines, min(line_count, max_lines))
 
 
-async def _fetch_as_b64(client: httpx.AsyncClient, url: str) -> Optional[str]:
+async def _fetch_as_b64(url: str) -> Optional[str]:
     """Fetch an image URL and return a base64 data URI, or None on failure."""
     if not url:
         return None
     for attempt in range(3):
         try:
-            r = await client.get(url)
-            if r.status_code != 200:
-                continue
-            content_type = r.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
-            data = base64.b64encode(r.content).decode()
-            return f"data:{content_type};base64,{data}"
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True, verify=False) as client:
+                r = await client.get(url)
+                if r.status_code != 200:
+                    continue
+                content_type = r.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
+                data = base64.b64encode(r.content).decode()
+                return f"data:{content_type};base64,{data}"
         except Exception:
             pass
     return None
@@ -148,16 +145,15 @@ async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
     """Fetch all cert images concurrently and return url→base64 map."""
     urls = set()
     for cert in certs:
-        for key in ('photo_signed_url', 'brand_logo_signed_url', 'rear_brand_logo_signed_url', 'qr_code_signed_url'):
+        for key in ('photo_signed_url', 'brand_logo_signed_url', 'rear_brand_logo_signed_url'):
             url = cert.get(key)
             if url:
                 urls.add(url)
-        # Add fallback QR URL only if there is no stored QR for this certificate.
-        if cert.get('uuid') and not cert.get('qr_code_signed_url'):
+        # Add fallback QR URL
+        if cert.get('uuid'):
             urls.add(_fallback_qr_url(cert["uuid"]))
 
-    async with httpx.AsyncClient(timeout=15, follow_redirects=True, verify=False) as client:
-        results = await asyncio.gather(*[_fetch_as_b64(client, url) for url in urls])
+    results = await asyncio.gather(*[_fetch_as_b64(url) for url in urls])
     return {url: b64 for url, b64 in zip(urls, results) if b64}
 
 
@@ -167,16 +163,17 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     cert_type = cert.get('type', '')
     group = schema.get('group', '')
 
-    photo_url = img_map.get(cert.get('photo_signed_url') or '') or cert.get('photo_signed_url') or ''
-    brand_logo_url = img_map.get(cert.get('brand_logo_signed_url') or '') or cert.get('brand_logo_signed_url') or ''
-    qr_url = ''
-    if cert.get('uuid'):
-        qr_url = (
-            img_map.get(cert.get('qr_code_signed_url') or '')
-            or img_map.get(_fallback_qr_url(cert['uuid']))
-            or cert.get('qr_code_signed_url')
-            or _fallback_qr_url(cert['uuid'])
-        )
+    photo_url = (
+        _storage_ref_to_b64(cert.get('photo_url') or '')
+        or img_map.get(cert.get('photo_signed_url') or '')
+        or ''
+    )
+    brand_logo_url = (
+        _storage_ref_to_b64(cert.get('brand_logo_url') or '')
+        or img_map.get(cert.get('brand_logo_signed_url') or '')
+        or ''
+    )
+    qr_url = img_map.get(_fallback_qr_url(cert['uuid'])) or _fallback_qr_url(cert['uuid']) if cert.get('uuid') else ''
     cert_number = _esc(_normalize_display_text(cert.get('certificate_number') or ''))
     description = _esc(_normalize_display_text(cert.get('generated_description') or fields.get('description') or ''))
 
@@ -265,7 +262,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
                     display = f'{display} {unit}'
             label = _esc(label)
 
-            is_comment = fname in ('comment', 'comments', 'microscopic_obs')
+            is_comment = fname in ('comment', 'comments')
             is_full = is_comment or field.get('field_type') in ('textarea', 'custom') or fname in ('description',)
             is_bold = fname in BOLD_FIELDS
             bold_style = 'font-weight:bold;' if is_bold else ''
@@ -273,7 +270,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             row_class = 'field-row full-width comment-row' if is_comment else ('field-row full-width' if is_full else 'field-row')
             val_class = 'value comment-value' if is_comment else ('value desc-value' if is_full else 'value')
             chars_per_line = 42 if is_full else 24
-            max_lines = 1 if is_comment else (3 if fname == 'conclusion' else 2)
+            max_lines = 1 if is_comment else (3 if fname in ('conclusion', 'microscopic_obs') else 2)
             visual_row_count += _estimate_text_lines(display, chars_per_line=chars_per_line, min_lines=1, max_lines=max_lines)
 
             rows_html += f'''<div class="{row_class}">
@@ -312,7 +309,12 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 
 def _render_card_back(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> str:
     rear_logo_url = cert.get('rear_brand_logo_signed_url') or cert.get('brand_logo_signed_url') or ''
-    rear_logo = img_map.get(rear_logo_url) or rear_logo_url or ''
+    rear_logo = (
+        _storage_ref_to_b64(cert.get('rear_brand_logo_url') or '')
+        or _storage_ref_to_b64(cert.get('brand_logo_url') or '')
+        or img_map.get(rear_logo_url)
+        or ''
+    )
     img_html = f'<img src="{_esc(rear_logo)}" class="back-logo" alt="Logo">' if rear_logo else ''
     return f'''
 <div class="cert-card back-card" data-cert-uuid="{_esc(cert.get('uuid',''))}">
@@ -507,6 +509,17 @@ body {
 
 .field-row.full-width { width: 100%; }
 
+.comment-row {
+  width: calc(100% + 34px) !important;
+}
+
+.comment-row .label {
+  width: 82px;
+}
+
+.comment-row .sep {
+  margin: 0 5px;
+}
 
 .label {
   width: 82px;
@@ -537,11 +550,14 @@ body {
 .comment-value {
   flex: 1;
   min-width: 0;
+  font-size: 1em;
   line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: normal;
+  letter-spacing: -0.02em;
+  word-spacing: -0.02em;
 }
 
 .card-footer {
@@ -593,7 +609,7 @@ FIT_SCRIPT = """
     const minLine = Math.max(6.8, lineHeight * 0.78);
     const maxLine = Math.min(14.8, lineHeight * 1.55);
 
-    const reservedGap = rowCount >= 10 ? 2 : rowCount <= 4 ? 0.75 : 1.25;
+    const reservedGap = rowCount >= 10 ? 3.5 : rowCount <= 4 ? 1.5 : 2;
 
     for (let i = 0; i < 12; i += 1) {
       const fieldsRect = fields.getBoundingClientRect();
@@ -630,8 +646,8 @@ FIT_SCRIPT = """
       return;
     }
 
-    if (rowCount <= 10 && finalAvailable > finalContent + 2) {
-      const fillRatio = clamp(finalAvailable / finalContent, 1, rowCount <= 4 ? 1.14 : rowCount <= 8 ? 1.09 : 1.06);
+    if (rowCount <= 10 && finalAvailable > finalContent + 4) {
+      const fillRatio = clamp(finalAvailable / finalContent, 1, rowCount <= 4 ? 1.1 : rowCount <= 8 ? 1.06 : 1.04);
       fields.style.fontSize = `${clamp(fontSize * fillRatio, minFont, maxFont).toFixed(2)}px`;
       fields.style.lineHeight = `${clamp(lineHeight * fillRatio, minLine, maxLine).toFixed(2)}px`;
     }
@@ -696,25 +712,19 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
 def _render_pdf_sync(html: str) -> bytes:
     from playwright.sync_api import sync_playwright
 
-    global _PLAYWRIGHT, _BROWSER
-
-    with _BROWSER_LOCK:
-        if _PLAYWRIGHT is None:
-            _PLAYWRIGHT = sync_playwright().start()
-        if _BROWSER is None:
-            _BROWSER = _PLAYWRIGHT.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage'])
-
-        page = _BROWSER.new_page()
-        try:
-            page.set_content(html, wait_until='load')
-            page.wait_for_function("window.__cardsFitted === true", timeout=5000)
-            return page.pdf(
-                format='A4',
-                margin={'top': '4mm', 'right': '10mm', 'bottom': '4mm', 'left': '10mm'},
-                print_background=True,
-            )
-        finally:
-            page.close()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage'])
+        page = browser.new_page()
+        page.set_content(html, wait_until='networkidle')
+        page.wait_for_function("window.__cardsFitted === true", timeout=5000)
+        page.wait_for_timeout(800)
+        pdf_bytes = page.pdf(
+            format='A4',
+            margin={'top': '4mm', 'right': '10mm', 'bottom': '4mm', 'left': '10mm'},
+            print_background=True,
+        )
+        browser.close()
+    return pdf_bytes
 
 
 async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
