@@ -587,6 +587,48 @@ async def certification_stats_daily(current_user: dict = Depends(require_staff))
     return {"daily": res}
 
 
+@router.get("/all-uuids")
+async def get_all_certificate_uuids(
+    search: Optional[str] = None,
+    type: Optional[str] = None,
+    published: Optional[str] = None,
+    rejected_filter: Optional[str] = None,
+):
+    db = await get_db()
+    filt = {"is_deleted": False}
+
+    if published == "true":
+        filt["is_published"] = True
+    elif published == "false":
+        filt["is_published"] = {"$ne": True}
+
+    if rejected_filter == "only":
+        filt["is_rejected"] = True
+    elif rejected_filter == "exclude":
+        filt["is_rejected"] = {"$ne": True}
+
+    if type:
+        filt["type"] = type
+
+    if search:
+        matching_clients = await db.clients.find(
+            {"name": {"$regex": search, "$options": "i"}, "is_deleted": False},
+            {"uuid": 1}
+        ).to_list(length=200)
+        matching_client_ids = [c["uuid"] for c in matching_clients]
+        search_conditions = [
+            {"certificate_number": {"$regex": search, "$options": "i"}},
+            {"fields": {"$regex": search, "$options": "i"}},
+            {"type": {"$regex": search, "$options": "i"}},
+        ]
+        if matching_client_ids:
+            search_conditions.append({"client_id": {"$in": matching_client_ids}})
+        filt["$or"] = search_conditions
+
+    docs = await db.certifications.find(filt, {"uuid": 1}).to_list(length=None)
+    return {"uuids": [d["uuid"] for d in docs]}
+
+
 # ✅ Get Single Certificate by UUID
 @router.get("/{uuid}")
 async def get_certification(uuid: str):
