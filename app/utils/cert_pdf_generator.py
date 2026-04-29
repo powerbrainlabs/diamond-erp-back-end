@@ -400,8 +400,8 @@ body {
 }
 
 .brand-logo {
-  height: 42px;
-  width: 59px;
+  height: 43px;
+  width: 65px;
   object-fit: contain;
   background: white;
   border-radius: 4px;
@@ -422,8 +422,8 @@ body {
   position: absolute;
   top: 91px;
   right: 22px;
-  width: 70px;
-  height: 70px;
+  width: 82px;
+  height: 82px;
   display: flex;
   align-items: center;
   justify-content: center;
