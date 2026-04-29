@@ -8,6 +8,15 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+ITEM_TYPE_LABELS = {
+    'single_diamond': 'Diamond Jewellery',
+    'loose_diamond': 'Loose Diamond',
+    'loose_stone': 'Loose Gemstone',
+    'single_mounded': 'Single Mounted Gemstone',
+    'double_mounded': 'Double Mounded',
+    'navaratna': 'Navaratna',
+}
+
 # Colors
 COLOR_PRIMARY = (139/255, 115/255, 85/255)      # #8b7355
 COLOR_TEXT = (92/255, 77/255, 61/255)           # #5c4d3d
@@ -113,7 +122,7 @@ def draw_job_card(c: canvas.Canvas, x: float, y: float, job: dict, client: dict,
     if phone:
         fields.append(("Contact", phone, False))
     else:
-        i_type = job.get("item_type", "").replace("_", " ").title()
+        i_type = ITEM_TYPE_LABELS.get(job.get("item_type", ""), job.get("item_type", "").replace("_", " ").title())
         fields.append(("Item Type", i_type, False))
     
     # Row 2, Col 1: Manufacturer OR Item Type
@@ -121,7 +130,7 @@ def draw_job_card(c: canvas.Canvas, x: float, y: float, job: dict, client: dict,
         fields.append(("Manufacturer", manufacturer.get("name", "N/A"), False))
     elif phone:
         # If we showed contact above, show item type here
-        i_type = job.get("item_type", "").replace("_", " ").title()
+        i_type = ITEM_TYPE_LABELS.get(job.get("item_type", ""), job.get("item_type", "").replace("_", " ").title())
         fields.append(("Item Type", i_type, False))
     # else: already showed item type in row 1
     
