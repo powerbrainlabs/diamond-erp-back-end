@@ -422,8 +422,8 @@ body {
   position: absolute;
   top: 91px;
   right: 22px;
-  width: 82px;
-  height: 82px;
+  width: 68px;
+  height: 68px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -437,7 +437,7 @@ body {
   height: 100%;
   object-fit: contain;
   object-position: center;
-  padding: 0 4px 0 0;
+  padding: 0 2px 0 0;
   box-sizing: border-box;
 }
 
