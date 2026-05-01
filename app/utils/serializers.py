@@ -96,6 +96,9 @@ def dump_manufacturer(doc):
 
 def dump_qc_report(doc) -> dict:
     d = dump_id(dict(doc))
+    for k, v in list(d.items()):
+        if isinstance(v, ObjectId):
+            d[k] = str(v)
     return d
 
 
