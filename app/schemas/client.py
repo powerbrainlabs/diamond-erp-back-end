@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
 import uuid
@@ -8,6 +8,13 @@ class ClientBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     contact_person: Optional[str] = None
     email: Optional[EmailStr] = None
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def empty_email_to_none(cls, v):
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
     phone: Optional[str] = Field(None, pattern=r"^[\+]?[0-9\s\-]{7,15}$")
     address: Optional[str] = None
     gst_number: Optional[str] = None
