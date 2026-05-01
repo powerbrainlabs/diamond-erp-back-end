@@ -196,7 +196,6 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     # Build field rows
     rows_html = ''
     visual_row_count = 0
-    has_long_color_value = False
 
     if cert_type == 'custom':
         if description:
@@ -262,8 +261,6 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
                         unit = 'ct' if (float(display) if display.replace('.', '', 1).isdigit() else 1) < 1 else 'cts'
                     display = f'{display} {unit}'
             label = _esc(label)
-            if fname == 'color' and len(display) > 25:
-                has_long_color_value = True
 
             is_comment = fname in ('comment', 'comments', 'microscopic_obs')
             is_full = is_comment or field.get('field_type') in ('textarea', 'custom') or fname in ('description',)
@@ -282,13 +279,10 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 
     # Density: estimate visual lines so wrapped values affect PDF fitting.
     row_count = max(visual_row_count, rows_html.count('field-row'))
-    content_row_count = rows_html.count('field-row')
-    use_compact_long_color = content_row_count < 10 and has_long_color_value
-    density_style = 'font-size:0.47em;line-height:8.5px;' if use_compact_long_color else 'font-size:0.62em;line-height:10.8px;'
-    card_class = 'cert-card compact-long-color' if use_compact_long_color else 'cert-card'
+    density_style = 'font-size:0.62em;line-height:10.8px;'
 
     return f'''
-<div class="{card_class}" data-cert-uuid="{_esc(cert.get('uuid',''))}" data-row-count="{row_count}">
+<div class="cert-card" data-cert-uuid="{_esc(cert.get('uuid',''))}" data-row-count="{row_count}">
   <header class="card-header">
     <img src="{GAC_HEADER_B64}" class="gac-header-img" alt="GAC">
     <div class="header-right">
@@ -511,15 +505,6 @@ body {
   align-items: flex-start;
   justify-content: flex-start;
   font-size: 0.87em;
-}
-
-.compact-long-color .fields-area {
-  font-size: 0.48em;
-  line-height: 8.6px;
-}
-
-.compact-long-color .field-row {
-  font-size: 0.74em;
 }
 
 .field-row.full-width { width: 100%; }
