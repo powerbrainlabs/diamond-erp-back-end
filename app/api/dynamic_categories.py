@@ -99,6 +99,8 @@ async def get_type_fields(
                 "label": field.get("label"),
                 "field_type": field.get("field_type"),
                 "display_order": field.get("display_order", 0),
+                "validation": field.get("validation") or {},
+                "is_required": field.get("is_required", False),
             })
     
     # Sort by display_order
