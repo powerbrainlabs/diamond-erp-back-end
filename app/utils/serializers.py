@@ -18,9 +18,9 @@ def get_permissions_for_role(role: str) -> list:
 
 def dump_user(doc) -> dict:
     d = dump_id(dict(doc))
-    for k in ("created_at", "updated_at"):
-        if k in d and isinstance(d[k], datetime):
-            d[k] = d[k]
+    for k, v in list(d.items()):
+        if isinstance(v, ObjectId):
+            d[k] = str(v)
     d["permissions"] = get_permissions_for_role(d.get("role", ""))
     if "features" not in d:
         d["features"] = []
