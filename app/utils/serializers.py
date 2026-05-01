@@ -28,6 +28,9 @@ def dump_user(doc) -> dict:
 
 def dump_job(doc) -> dict:
     d = dump_id(dict(doc))
+    for k, v in list(d.items()):
+        if isinstance(v, ObjectId):
+            d[k] = str(v)
     return d
 
 def dump_client(doc):
