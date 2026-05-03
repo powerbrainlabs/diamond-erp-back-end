@@ -326,6 +326,11 @@ def _render_card_back(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> str
 
 CSS = POPPINS_FONT_CSS + """
 
+@page {
+  size: A4;
+  margin: 0;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -337,12 +342,12 @@ body {
 
 .page {
   page-break-after: always;
-  width: 178mm;
-  height: 289mm;
-  margin: 0 auto;
+  width: 210mm;
+  height: 297mm;
   background: white;
   box-sizing: border-box;
   overflow: hidden;
+  position: relative;
 }
 .page:last-child { page-break-after: avoid; }
 
@@ -350,8 +355,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2mm;
-  width: calc(8.6cm * 2 + 3mm);
-  margin: 0 auto;
+  width: 175mm;
+  margin-left: 17.5mm;
+  margin-top: 7mm;
   align-items: flex-start;
 }
 
@@ -720,7 +726,7 @@ def _render_pdf_sync(html: str) -> bytes:
         page.wait_for_timeout(800)
         pdf_bytes = page.pdf(
             format='A4',
-            margin={'top': '4mm', 'right': '10mm', 'bottom': '4mm', 'left': '10mm'},
+            margin={'top': '0', 'right': '0', 'bottom': '0', 'left': '0'},
             print_background=True,
         )
         browser.close()
