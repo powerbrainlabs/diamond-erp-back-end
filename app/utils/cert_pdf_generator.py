@@ -560,13 +560,14 @@ body {
   flex: 1;
   min-width: 0;
   font-size: 1em;
-  line-height: 1.05;
+  line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: normal;
   letter-spacing: -0.02em;
   word-spacing: -0.02em;
+  padding-bottom: 2px;
 }
 
 .card-footer {
