@@ -448,12 +448,12 @@ body {
 }
 
 .approx-label {
-  font-size: 0.2em;
+  font-size: 6px;
   position: absolute;
   font-weight: 500;
   top: 91px;
-  right: 10px;
-  height: 60px;
+  right: 4px;
+  height: 70px;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -462,6 +462,7 @@ body {
   text-orientation: mixed;
   white-space: nowrap;
   color: #4b5563;
+  z-index: 3;
 }
 
 .card-body {
