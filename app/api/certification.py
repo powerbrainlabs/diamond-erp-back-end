@@ -642,6 +642,9 @@ async def get_certification(uuid: str):
     if not doc:
         raise HTTPException(status_code=404, detail="Certificate not found")
 
+    if not doc.get("is_published"):
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
     # Join with client
     client = await db.clients.find_one({
         "uuid": doc["client_id"],

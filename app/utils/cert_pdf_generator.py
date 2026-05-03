@@ -238,7 +238,9 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
         for field in sorted_fields:
             fname = field.get('field_name', '')
             raw = fields.get(fname)
-            if raw is None or raw == '':
+            if group == 'navaratna' and fname == 'conclusion':
+                raw = raw or 'Natural Diamond'
+            elif raw is None or raw == '':
                 continue
 
             label = _normalize_display_text(field.get('label', fname))
