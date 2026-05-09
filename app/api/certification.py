@@ -392,7 +392,8 @@ async def reject_certification(cert_uuid: str):
 async def bulk_publish_certifications(payload: BulkPublishPayload):
     """
     Bulk publish certificates by UUID list.
-    Sets is_published=True and published_at=now on matching non-rejected certs.
+    Previously published (non-history) certs are moved to history first,
+    then the selected certs become the new published batch.
     """
     if not payload.uuids:
         raise HTTPException(status_code=400, detail="No UUIDs provided")
@@ -401,9 +402,14 @@ async def bulk_publish_certifications(payload: BulkPublishPayload):
     rejected_count = await db.certifications.count_documents(
         {"uuid": {"$in": payload.uuids}, "is_deleted": False, "is_rejected": True}
     )
+    # Move current published batch to history before publishing new batch
+    await db.certifications.update_many(
+        {"is_published": True, "is_history": {"$ne": True}, "is_deleted": False},
+        {"$set": {"is_history": True, "updated_at": now}},
+    )
     result = await db.certifications.update_many(
         {"uuid": {"$in": payload.uuids}, "is_deleted": False, "is_rejected": {"$ne": True}},
-        {"$set": {"is_published": True, "published_at": now, "updated_at": now}},
+        {"$set": {"is_published": True, "is_history": False, "published_at": now, "updated_at": now}},
     )
     detail = f"{result.modified_count} certificate(s) published"
     if rejected_count:
@@ -437,8 +443,12 @@ async def list_certifications(
     # Filter by published state
     if published == "true":
         filt["is_published"] = True
+        filt["is_history"] = {"$ne": True}
     elif published == "false":
         filt["is_published"] = {"$ne": True}
+    elif published == "history":
+        filt["is_published"] = True
+        filt["is_history"] = True
 
     if rejected_filter == "only":
         filt["is_rejected"] = True
