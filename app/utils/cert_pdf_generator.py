@@ -374,7 +374,7 @@ body {
 
 .cert-card {
   background-color: white;
-  width: 8.6cm;
+  width: 8.7cm;
   height: 5.5cm;
   padding: 0;
   border-top: 1px dashed #2b1fb4;
@@ -422,7 +422,7 @@ body {
   object-fit: contain;
   flex-shrink: 0;
   margin-top: 4px;
-  margin-right: -3px;
+  margin-right: -1px;
   align-self: flex-start;
 }
 
@@ -430,23 +430,13 @@ body {
   position: absolute;
   top: 91px;
   right: 22px;
-  width: 70px;
-  height: 70px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  box-sizing: border-box;
   z-index: 2;
 }
 
 .cert-photo {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center;
-  padding: 0 2px 0 0;
-  box-sizing: border-box;
+  display: block;
+  height: 0.535in;
+  width: auto;
 }
 
 .approx-label {
@@ -455,7 +445,7 @@ body {
   font-weight: 500;
   top: 91px;
   right: 4px;
-  height: 70px;
+  height: 0.535in;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -702,7 +692,7 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
                 if len(pair) == 2:
                     row_html = _render_card_back(pair[1], img_map) + _render_card_back(pair[0], img_map)
                 else:
-                    row_html = '<div style="width:8.6cm;height:5.5cm;flex-shrink:0"></div>' + _render_card_back(pair[0], img_map)
+                    row_html = '<div style="width:8.7cm;height:5.5cm;flex-shrink:0"></div>' + _render_card_back(pair[0], img_map)
                 back_rows.append(f'<div class="print-row">{row_html}</div>')
             pages_html += f'<div class="page"><div class="print-grid">{"".join(back_rows)}</div></div>'
 
