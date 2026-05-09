@@ -448,7 +448,6 @@ async def list_certifications(
         filt["is_published"] = {"$ne": True}
     elif published == "history":
         filt["is_published"] = True
-        filt["is_history"] = True
 
     if rejected_filter == "only":
         filt["is_rejected"] = True
