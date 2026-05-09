@@ -427,7 +427,7 @@ async def seed_default_category_schemas(db):
             "field_name": "comment",
             "field_type": "creatable_select",
             "is_required": False,
-            "placeholder": "Select or type a comment (min 50 characters)",
+            "placeholder": "Select or type a comment (max 50 characters)",
             "options": [
                 "Excellent quality with superior characteristics and exceptional brilliance",
                 "No visible inclusions under 10x magnification, outstanding clarity grade",
@@ -435,7 +435,7 @@ async def seed_default_category_schemas(db):
                 "Exceptional clarity and brilliance with superior cut proportions",
                 "Good overall quality with well-defined characteristics and natural origin confirmed",
             ],
-            "validation": {"min_length": 50},
+            "validation": {"min_length": 1, "max_length": 50},
             "display_order": 9,
         },
     ]
@@ -574,7 +574,7 @@ async def seed_default_category_schemas(db):
             "field_name": "comment",
             "field_type": "creatable_select",
             "is_required": False,
-            "placeholder": "Select or type a comment (min 50 characters)",
+            "placeholder": "Select or type a comment (max 50 characters)",
             "options": [
                 "Superior cut and polish with excellent light performance and symmetry",
                 "Good symmetry and proportions with natural characteristics confirmed",
@@ -582,7 +582,7 @@ async def seed_default_category_schemas(db):
                 "Outstanding brilliance and fire with superior optical performance observed",
                 "No fluorescence detected, natural formation confirmed under magnification",
             ],
-            "validation": {"min_length": 50},
+            "validation": {"min_length": 1, "max_length": 50},
             "display_order": 9,
         },
     ]
@@ -730,7 +730,7 @@ async def seed_default_category_schemas(db):
             "field_name": "comment",
             "field_type": "creatable_select",
             "is_required": False,
-            "placeholder": "Select or type a comment (min 50 characters)",
+            "placeholder": "Select or type a comment (max 50 characters)",
             "options": [
                 "Unheated, excellent origin with natural inclusions typical of the variety",
                 "Heat treated for color enhancement, standard industry practice confirmed",
@@ -738,7 +738,7 @@ async def seed_default_category_schemas(db):
                 "Origin and natural formation confirmed, exceptional color saturation noted",
                 "Vivid natural color with no indications of artificial treatment observed",
             ],
-            "validation": {"min_length": 50},
+            "validation": {"min_length": 1, "max_length": 50},
             "display_order": 10,
         },
     ]
@@ -878,7 +878,7 @@ async def seed_default_category_schemas(db):
             "field_name": "comment",
             "field_type": "creatable_select",
             "is_required": False,
-            "placeholder": "Select or type a comment (min 50 characters)",
+            "placeholder": "Select or type a comment (max 50 characters)",
             "options": [
                 "Beautiful color with excellent setting craftsmanship and premium quality stones",
                 "Excellent setting with natural gemstone origin confirmed under magnification",
@@ -886,7 +886,7 @@ async def seed_default_category_schemas(db):
                 "Superior brilliance with natural inclusions typical of the gemstone variety",
                 "Outstanding color saturation with no indications of artificial enhancement",
             ],
-            "validation": {"min_length": 50},
+            "validation": {"min_length": 1, "max_length": 50},
             "display_order": 12,
         },
     ]
@@ -1148,7 +1148,7 @@ async def seed_default_category_schemas(db):
             "field_name": "comment",
             "field_type": "creatable_select",
             "is_required": False,
-            "placeholder": "Select or type a comment (min 50 characters)",
+            "placeholder": "Select or type a comment (max 50 characters)",
             "options": [
                 "Traditional Navaratna setting with nine auspicious gems of natural origin",
                 "Premium quality Navaratna with all nine gemstones confirmed as natural",
@@ -1156,7 +1156,7 @@ async def seed_default_category_schemas(db):
                 "All nine stones are natural and untreated, excellent astrological properties",
                 "Superior craftsmanship with natural gemstones, ideal for astrological purposes",
             ],
-            "validation": {"min_length": 50},
+            "validation": {"min_length": 1, "max_length": 50},
             "display_order": 8,
         },
     ]
