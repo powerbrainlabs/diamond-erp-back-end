@@ -435,7 +435,7 @@ body {
 
 .cert-photo {
   display: block;
-  height: 0.46in;
+  height: 0.575in;
   width: auto;
 }
 
