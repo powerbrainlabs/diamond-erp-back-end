@@ -422,7 +422,7 @@ body {
   object-fit: contain;
   flex-shrink: 0;
   margin-top: 4px;
-  margin-right: -1px;
+  margin-right: -2px;
   align-self: flex-start;
 }
 
