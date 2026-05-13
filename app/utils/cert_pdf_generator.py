@@ -428,32 +428,26 @@ body {
 
 .cert-photo-frame {
   position: absolute;
-  top: 91px;
-  right: 22px;
+  top: 100px;
+  right: 30px;
   z-index: 2;
 }
 
 .cert-photo {
   display: block;
-  height: 0.575in;
+  height: 0.535in;
   width: auto;
 }
 
 .approx-label {
-  font-size: 6px;
+  font-size: 5.5px;
   position: absolute;
-  font-weight: 500;
-  top: 91px;
-  right: 4px;
-  height: 0.46in;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
+  font-weight: 400;
+  bottom: 75px;
+  right: 2px;
+  transform: rotate(90deg);
+  transform-origin: center center;
   white-space: nowrap;
-  color: #4b5563;
   z-index: 3;
 }
 
