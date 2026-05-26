@@ -102,6 +102,24 @@ async def seed_default_attributes(db):
             "updated_at": now,
         })
 
+    # Seed diamond conclusions for schema groups that load them dynamically from management
+    for schema_group in ("single_diamond", "loose_diamond", "navaratna"):
+        for conclusion in diamond_conclusions:
+            extra = {}
+            if conclusion == "Natural Diamond":
+                extra = {"sg": "3.52", "hardness": "10"}
+            attributes.append({
+                "uuid": str(uuid.uuid4()),
+                "group": schema_group,
+                "type": "conclusion",
+                "name": conclusion,
+                "is_deleted": False,
+                "created_by": system_author,
+                "created_at": now,
+                "updated_at": now,
+                **extra,
+            })
+
     # Gemstone attributes
     for gemstone in gemstone_types:
         attributes.append({
@@ -445,7 +463,7 @@ async def seed_default_category_schemas(db):
         "name": "Diamond Jewellery Certificate",
         "group": "single_diamond",
         "description": "Jewelry with diamonds (mounted diamond jewelry)",
-        "description_template": "One {metal} {category} Studded with {diamond_piece} {conclusion}.",
+        "description_template": "One {metal} {category} studded with {diamond_piece} {conclusion} and Colour Stones.",
         "fields": single_diamond_fields,
         "is_active": True,
         "is_deleted": False,
@@ -509,8 +527,8 @@ async def seed_default_category_schemas(db):
             "field_name": "hardness",
             "field_type": "text",
             "is_required": False,
-            "placeholder": "Mohs hardness scale",
-            "unit": "(Mohs Scale)",
+            "placeholder": "Hardness",
+            "unit": "",
             "display_order": 2,
         },
         {
@@ -563,9 +581,10 @@ async def seed_default_category_schemas(db):
             "field_id": str(uuid.uuid4()),
             "label": "Conclusion",
             "field_name": "conclusion",
-            "field_type": "text",
+            "field_type": "creatable_select",
             "is_required": False,
-            "placeholder": "Final conclusion",
+            "placeholder": "Select or type conclusion",
+            "options": ["Natural", "Synthetic", "Treated", "Heat Treated", "Unheated", "No Treatment", "Beryllium Treated", "Glass Filled", "Fracture Filled", "Irradiated", "Coated", "Dyed"],
             "display_order": 8,
         },
         {
@@ -684,8 +703,8 @@ async def seed_default_category_schemas(db):
             "field_name": "hardness",
             "field_type": "text",
             "is_required": False,
-            "placeholder": "Mohs hardness",
-            "unit": "(Mohs Scale)",
+            "placeholder": "Hardness",
+            "unit": "",
             "display_order": 5,
         },
         {
@@ -719,9 +738,10 @@ async def seed_default_category_schemas(db):
             "field_id": str(uuid.uuid4()),
             "label": "Conclusion",
             "field_name": "conclusion",
-            "field_type": "text",
+            "field_type": "creatable_select",
             "is_required": False,
-            "placeholder": "Final conclusion",
+            "placeholder": "Select or type conclusion",
+            "options": ["Natural", "Synthetic", "Treated", "Heat Treated", "Unheated", "No Treatment", "Beryllium Treated", "Glass Filled", "Fracture Filled", "Irradiated", "Coated", "Dyed"],
             "display_order": 9,
         },
         {
@@ -812,8 +832,8 @@ async def seed_default_category_schemas(db):
             "field_name": "hardness",
             "field_type": "text",
             "is_required": False,
-            "placeholder": "Mohs hardness",
-            "unit": "(Mohs Scale)",
+            "placeholder": "Hardness",
+            "unit": "",
             "display_order": 5,
         },
         {
@@ -867,9 +887,10 @@ async def seed_default_category_schemas(db):
             "field_id": str(uuid.uuid4()),
             "label": "Conclusion",
             "field_name": "conclusion",
-            "field_type": "text",
+            "field_type": "creatable_select",
             "is_required": False,
-            "placeholder": "Final conclusion",
+            "placeholder": "Select or type conclusion",
+            "options": ["Natural", "Synthetic", "Treated", "Heat Treated", "Unheated", "No Treatment", "Beryllium Treated", "Glass Filled", "Fracture Filled", "Irradiated", "Coated", "Dyed"],
             "display_order": 11,
         },
         {
@@ -974,13 +995,56 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
+            "label": "Cut",
+            "field_name": "cut",
+            "field_type": "creatable_select",
+            "is_required": False,
+            "options": ["Excellent", "Very Good", "Good", "Fair", "Poor"],
+            "display_order": 7,
+            "conditional_logic": {
+                "show_if_field": "primary_gemstone",
+                "show_if_value": "Natural Diamond",
+            },
+        },
+        {
+            "field_id": str(uuid.uuid4()),
+            "label": "Clarity",
+            "field_name": "clarity",
+            "field_type": "creatable_select",
+            "is_required": False,
+            "options": ["FL", "IF", "VVS1", "VVS2", "VS1", "VS2", "SI1", "SI2", "I1", "I2", "I3"],
+            "display_order": 8,
+            "conditional_logic": {
+                "show_if_field": "primary_gemstone",
+                "show_if_value": "Natural Diamond",
+            },
+        },
+        {
+            "field_id": str(uuid.uuid4()),
+            "label": "Colour",
+            "field_name": "colour",
+            "field_type": "creatable_select",
+            "is_required": False,
+            "options": ["D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O-Z"],
+            "display_order": 9,
+            "conditional_logic": {
+                "show_if_field": "primary_gemstone",
+                "show_if_value": "Natural Diamond",
+            },
+        },
+        {
+            "field_id": str(uuid.uuid4()),
             "label": "Hardness",
             "field_name": "hardness",
             "field_type": "text",
             "is_required": False,
-            "placeholder": "Mohs hardness",
-            "unit": "(Mohs Scale)",
+            "placeholder": "Hardness",
+            "unit": "",
             "display_order": 7,
+            "conditional_logic": {
+                "show_if_field": "primary_gemstone",
+                "show_if_not_value": "Natural Diamond",
+            },
         },
         {
             "field_id": str(uuid.uuid4()),
@@ -990,6 +1054,10 @@ async def seed_default_category_schemas(db):
             "is_required": False,
             "placeholder": "Specific gravity",
             "display_order": 8,
+            "conditional_logic": {
+                "show_if_field": "primary_gemstone",
+                "show_if_not_value": "Natural Diamond",
+            },
         },
         {
             "field_id": str(uuid.uuid4()),
@@ -999,6 +1067,10 @@ async def seed_default_category_schemas(db):
             "is_required": False,
             "placeholder": "Refractive index",
             "display_order": 9,
+            "conditional_logic": {
+                "show_if_field": "primary_gemstone",
+                "show_if_not_value": "Natural Diamond",
+            },
         },
         {
             "field_id": str(uuid.uuid4()),
@@ -1043,9 +1115,10 @@ async def seed_default_category_schemas(db):
             "field_id": str(uuid.uuid4()),
             "label": "Conclusion",
             "field_name": "conclusion",
-            "field_type": "text",
+            "field_type": "creatable_select",
             "is_required": False,
-            "placeholder": "Final conclusion",
+            "placeholder": "Select or type conclusion",
+            "options": ["Natural", "Synthetic", "Treated", "Heat Treated", "Unheated", "No Treatment", "Beryllium Treated", "Glass Filled", "Fracture Filled", "Irradiated", "Coated", "Dyed"],
             "display_order": 14,
         },
     ]

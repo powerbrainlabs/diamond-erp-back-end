@@ -47,11 +47,11 @@ CERTIFICATE_FIELD_CONFIG = {
     'single_diamond': ['gross_weight', 'diamond_weight', 'cut', 'clarity', 'color', 'conclusion', 'comment'],
     'loose_diamond': ['dimension', 'weight', 'shape', 'clarity', 'color', 'hardness', 'sg', 'microscopic_obs', 'conclusion', 'comment'],
     'loose_stone': ['dimension', 'color', 'weight', 'shape', 'sg', 'ri', 'hardness', 'microscopic_obs', 'conclusion', 'comment'],
-    'single_mounded': ['gross_weight', 'gemstone_weight', 'shape', 'sg', 'hardness', 'ri', 'microscopic_obs', 'conclusion', 'comment'],
-    'double_mounded': ['gross_weight', 'primary_stone_weight', 'secondary_stone_weight', 'shape', 'sg', 'ri', 'hardness', 'microscopic_obs', 'conclusion'],
+    'single_mounded': ['gross_weight', 'stone_weight', 'shape', 'sg', 'hardness', 'ri', 'microscopic_obs', 'conclusion', 'comment'],
+    'double_mounded': ['gross_weight', 'primary_stone_weight', 'secondary_stone_weight', 'shape', 'sg', 'ri', 'hardness', 'cut', 'clarity', 'colour', 'microscopic_obs', 'conclusion'],
     'navaratna': ['gross_weight', 'diamond_weight', 'cut', 'color', 'clarity', 'conclusion', 'comment'],
 }
-BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion'}
+BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'stone_weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion'}
 
 
 def _normalize_display_text(value: Any) -> str:
@@ -218,6 +218,14 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
         allowed = CERTIFICATE_FIELD_CONFIG.get(group, [])
         schema_fields = schema.get('fields') or []
 
+        # Double mounded: swap sg/ri/hardness ↔ cut/clarity/colour based on primary gemstone
+        if group == 'double_mounded':
+            primary_gemstone = (fields.get('primary_gemstone') or '').strip().lower()
+            if primary_gemstone == 'natural diamond':
+                allowed = [f for f in allowed if f not in ('sg', 'ri', 'hardness')]
+            else:
+                allowed = [f for f in allowed if f not in ('cut', 'clarity', 'colour')]
+
         if description:
             visual_row_count += _estimate_text_lines(description, chars_per_line=42, min_lines=1, max_lines=3)
             rows_html += f'''<div class="field-row full-width">
@@ -235,6 +243,20 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             key=lambda f: field_order.get(f.get('field_name', ''), 999)
         )
 
+        # Apply conditional_logic (e.g. double_mounded: cut/clarity/colour vs sg/ri/hardness)
+        def _passes_conditional(field_def):
+            cl = field_def.get('conditional_logic')
+            if not cl or not cl.get('show_if_field'):
+                return True
+            dep_val = fields.get(cl['show_if_field'], '')
+            if 'show_if_not_value' in cl:
+                return dep_val != cl['show_if_not_value']
+            if 'show_if_value' in cl:
+                return dep_val == cl['show_if_value']
+            return True
+
+        sorted_fields = [f for f in sorted_fields if _passes_conditional(f)]
+
         for field in sorted_fields:
             fname = field.get('field_name', '')
             raw = fields.get(fname)
@@ -250,7 +272,8 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             if m:
                 gem_name = fields.get(f'{m.group(1)}_gemstone')
                 if gem_name:
-                    label = _normalize_display_text(f'{gem_name} Weight')
+                    clean_gem = re.sub(r'^natural\s+', '', gem_name, flags=re.IGNORECASE)
+                    label = _normalize_display_text(f'{clean_gem} Weight')
 
             if field.get('field_type') == 'custom' and isinstance(raw, dict):
                 label = _normalize_display_text(raw.get('custom_label', label))
@@ -258,7 +281,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             else:
                 display = _esc(_format_value(raw, field.get('field_type', '')))
                 unit = field.get('unit', '')
-                if unit:
+                if unit and fname != 'hardness':
                     if unit.lower() in ('cts', 'ct'):
                         unit = 'ct' if (float(display) if display.replace('.', '', 1).isdigit() else 1) < 1 else 'cts'
                     display = f'{display} {unit}'
@@ -400,7 +423,7 @@ body {
 .header-right {
   position: absolute;
   top: 3.5px;
-  right: 4px;
+  right: 9px;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -422,14 +445,14 @@ body {
   object-fit: contain;
   flex-shrink: 0;
   margin-top: 4px;
-  margin-right: -2px;
+  margin-right: -8px;
   align-self: flex-start;
 }
 
 .cert-photo-frame {
   position: absolute;
   top: 100px;
-  right: 30px;
+  right: 42px;
   z-index: 2;
 }
 
@@ -444,7 +467,7 @@ body {
   position: absolute;
   font-weight: 400;
   bottom: 75px;
-  right: 2px;
+  right: 14px;
   transform: rotate(90deg);
   transform-origin: center center;
   white-space: nowrap;

@@ -427,6 +427,8 @@ async def list_certifications(
     type: Optional[str] = None,
     published: Optional[str] = None,
     rejected_filter: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
     sort_by: str = "created_at",
@@ -474,6 +476,16 @@ async def list_certifications(
         if matching_client_ids:
             search_conditions.append({"client_id": {"$in": matching_client_ids}})
         filt["$or"] = search_conditions
+
+    # Date range filter (used for history tab)
+    if date_from or date_to:
+        date_filter = {}
+        if date_from:
+            date_filter["$gte"] = datetime.strptime(date_from, "%Y-%m-%d")
+        if date_to:
+            from datetime import timedelta
+            date_filter["$lt"] = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
+        filt["created_at"] = date_filter
 
     sort_field = ALLOWED_SORTS.get(sort_by, "created_at")
     sort_dir = -1 if order == "desc" else 1
