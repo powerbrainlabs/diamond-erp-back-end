@@ -248,11 +248,11 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             cl = field_def.get('conditional_logic')
             if not cl or not cl.get('show_if_field'):
                 return True
-            dep_val = fields.get(cl['show_if_field'], '')
+            dep_val = str(fields.get(cl['show_if_field'], '') or '').strip().lower()
             if 'show_if_not_value' in cl:
-                return dep_val != cl['show_if_not_value']
+                return dep_val != str(cl['show_if_not_value']).strip().lower()
             if 'show_if_value' in cl:
-                return dep_val == cl['show_if_value']
+                return dep_val == str(cl['show_if_value']).strip().lower()
             return True
 
         sorted_fields = [f for f in sorted_fields if _passes_conditional(f)]
