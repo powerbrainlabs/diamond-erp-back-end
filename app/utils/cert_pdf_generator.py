@@ -400,8 +400,6 @@ body {
   width: 8.6cm;
   height: 5.5cm;
   padding: 0;
-  border-top: 1px dashed #2b1fb4;
-  border-left: 1px dashed #2b1fb4;
   box-sizing: border-box;
   position: relative;
   font-family: 'Poppins', Arial, sans-serif;
@@ -423,7 +421,7 @@ body {
 .header-right {
   position: absolute;
   top: 3.5px;
-  right: 9px;
+  right: 4px;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -445,14 +443,14 @@ body {
   object-fit: contain;
   flex-shrink: 0;
   margin-top: 4px;
-  margin-right: -8px;
+  margin-right: -2px;
   align-self: flex-start;
 }
 
 .cert-photo-frame {
   position: absolute;
-  top: 100px;
-  right: 42px;
+  top: 91px;
+  right: 22px;
   z-index: 2;
 }
 
@@ -588,7 +586,8 @@ body {
 
 /* Back card */
 .back-card {
-  border: none;
+  border-top: 1px dashed #2b1fb4;
+  border-left: 1px dashed #2b1fb4;
 }
 .back-media {
   width: 100%;
