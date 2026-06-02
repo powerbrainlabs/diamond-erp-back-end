@@ -205,6 +205,48 @@ async def seed_default_attributes(db):
             "updated_at": now,
         })
 
+    # Gemstone-mounted groups: seed primary/secondary gemstone dropdown options.
+    # "Natural Diamond" must be present (and correctly cased) so the double_mounded
+    # conditional_logic (show_if_value: "Natural Diamond") toggles cut/clarity/colour
+    # vs sg/ri/hardness when picked from the dropdown.
+    mounted_gemstone_options = ["Natural Diamond", *gemstone_types]
+    for schema_group in ("double_mounded", "single_mounded", "loose_stone"):
+        for gem_type in ("primary_gemstone", "secondary_gemstone", "gemstone"):
+            for gem_name in mounted_gemstone_options:
+                attributes.append({
+                    "uuid": str(uuid.uuid4()),
+                    "group": schema_group,
+                    "type": gem_type,
+                    "name": gem_name,
+                    "is_deleted": False,
+                    "created_by": system_author,
+                    "created_at": now,
+                    "updated_at": now,
+                })
+        # Also seed metal/shape/microscopic option sets shared across gemstone forms
+        for metal in metal_types:
+            attributes.append({
+                "uuid": str(uuid.uuid4()),
+                "group": schema_group,
+                "type": "metal",
+                "name": metal,
+                "is_deleted": False,
+                "created_by": system_author,
+                "created_at": now,
+                "updated_at": now,
+            })
+        for shape in gemstone_shapes:
+            attributes.append({
+                "uuid": str(uuid.uuid4()),
+                "group": schema_group,
+                "type": "shape",
+                "name": shape,
+                "is_deleted": False,
+                "created_by": system_author,
+                "created_at": now,
+                "updated_at": now,
+            })
+
     for attr in attributes:
         await db.attributes.update_one(
             {"group": attr["group"], "type": attr["type"], "name": attr["name"]},
