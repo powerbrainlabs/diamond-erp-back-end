@@ -449,8 +449,8 @@ body {
 
 .cert-photo-frame {
   position: absolute;
-  top: 91px;
-  right: 22px;
+  top: 100px;
+  right: 42px;
   z-index: 2;
 }
 
