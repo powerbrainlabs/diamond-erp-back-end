@@ -189,6 +189,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     photo_html = (
         f'''<div class="cert-photo-frame">
   <img src="{_esc(photo_url)}" class="cert-photo" alt="Photo">
+  <span class="approx-label">Approx Photo</span>
 </div>'''
         if photo_url else ''
     )
@@ -316,7 +317,6 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     </div>
   </header>
   {photo_html}
-  <span class="approx-label">Approx Photo</span>
   <div class="card-body">
     <div class="cert-title">CERTIFICATE OF AUTHENTICITY</div>
     <div class="cert-details">
@@ -450,8 +450,11 @@ body {
 .cert-photo-frame {
   position: absolute;
   top: 100px;
-  right: 42px;
+  right: 4px;
   z-index: 2;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
 }
 
 .cert-photo {
@@ -462,14 +465,11 @@ body {
 
 .approx-label {
   font-size: 5.5px;
-  position: absolute;
   font-weight: 400;
-  bottom: 75px;
-  right: 14px;
-  transform: rotate(90deg);
-  transform-origin: center center;
   white-space: nowrap;
-  z-index: 3;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  margin-left: 2px;
 }
 
 .card-body {
