@@ -19,6 +19,28 @@ from ..utils.template_renderer import render_description_template
 
 router = APIRouter(prefix="/api/certifications", tags=["Certifications"])
 
+GEMSTONE_CERTIFICATE_GROUPS = {"loose_stone", "single_mounded", "double_mounded"}
+
+
+def _render_certificate_description(schema: Optional[Dict[str, Any]], fields: Dict[str, Any]) -> str:
+    if not schema or not fields:
+        return ""
+
+    if schema.get("group") in GEMSTONE_CERTIFICATE_GROUPS:
+        return ""
+
+    if schema.get("group") == "navaratna":
+        category = str(fields.get("category") or "").strip()
+        diamond_piece = str(fields.get("diamond_piece") or "1").strip() or "1"
+        if category:
+            return f"One NR {category} studded with {diamond_piece} Natural Diamond and Colour Stones."
+
+    description_template = schema.get("description_template")
+    if description_template:
+        return render_description_template(description_template, fields)
+
+    return ""
+
 
 def promote_file_from_temp(file_id: str) -> str:
     # Handle empty or None file_id
@@ -520,13 +542,9 @@ async def list_certifications(
                     "fields": schema.get("fields", [])
                 }
 
-                # Render description from template if available
-                description_template = schema.get("description_template")
-                if description_template and doc.get("fields"):
-                    doc["generated_description"] = render_description_template(
-                        description_template,
-                        doc.get("fields", {})
-                    )
+                generated_description = _render_certificate_description(schema, doc.get("fields", {}))
+                if generated_description:
+                    doc["generated_description"] = generated_description
 
         serialized = serialize_mongo_doc(doc)
 
@@ -691,13 +709,9 @@ async def get_certification(uuid: str):
                 "fields": schema.get("fields", [])
             }
 
-            # Render description from template if available
-            description_template = schema.get("description_template")
-            if description_template and doc.get("fields"):
-                doc["generated_description"] = render_description_template(
-                    description_template,
-                    doc.get("fields", {})
-                )
+            generated_description = _render_certificate_description(schema, doc.get("fields", {}))
+            if generated_description:
+                doc["generated_description"] = generated_description
 
     serialized = serialize_mongo_doc(doc)
     serialized = attach_presigned_urls(serialized)
@@ -784,11 +798,9 @@ async def download_certificates_pdf(payload: DownloadPdfPayload):
         schema = schema_map.get(schema_uuid)
         if schema:
             doc["schema"] = schema
-            description_template = schema.get("description_template")
-            if description_template and doc.get("fields"):
-                doc["generated_description"] = render_description_template(
-                    description_template, doc["fields"]
-                )
+            generated_description = _render_certificate_description(schema, doc.get("fields", {}))
+            if generated_description:
+                doc["generated_description"] = generated_description
         certs.append(doc)
 
     if not certs:

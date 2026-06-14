@@ -1281,7 +1281,7 @@ async def seed_default_category_schemas(db):
         "name": "Navaratna Certificate",
         "group": "navaratna",
         "description": "Nine-gem jewelry (traditional Navaratna)",
-        "description_template": "One Navaratna {category} set in {metal} with nine precious gemstones.",
+        "description_template": "One NR {category} studded with {diamond_piece} Natural Diamond and Colour Stones.",
         "fields": navaratna_fields,
         "is_active": True,
         "is_deleted": False,
