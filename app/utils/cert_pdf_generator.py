@@ -52,6 +52,7 @@ CERTIFICATE_FIELD_CONFIG = {
     'navaratna': ['gross_weight', 'diamond_weight', 'cut', 'color', 'clarity', 'conclusion', 'comment'],
 }
 BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'stone_weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion'}
+GEMSTONE_CERTIFICATE_GROUPS = {'loose_stone', 'single_mounded', 'double_mounded'}
 
 
 def _normalize_display_text(value: Any) -> str:
@@ -175,7 +176,9 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     )
     qr_url = img_map.get(_fallback_qr_url(cert['uuid'])) or _fallback_qr_url(cert['uuid']) if cert.get('uuid') else ''
     cert_number = _esc(_normalize_display_text(cert.get('certificate_number') or ''))
-    description = _esc(_normalize_display_text(cert.get('generated_description') or fields.get('description') or ''))
+    description = ''
+    if group not in GEMSTONE_CERTIFICATE_GROUPS:
+        description = _esc(_normalize_display_text(cert.get('generated_description') or fields.get('description') or ''))
 
     # Header images
     brand_logo_html = ''
@@ -201,9 +204,10 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     if cert_type == 'custom':
         if description:
             visual_row_count += _estimate_text_lines(description, chars_per_line=42, min_lines=1, max_lines=3)
+            description_bold_style = 'font-weight:bold;' if fields.get('description_bold') else ''
             rows_html += f'''<div class="field-row full-width">
-                <span class="label">Description</span><span class="sep">:</span>
-                <span class="value desc-value">{description}</span></div>'''
+                <span class="label" style="{description_bold_style}">Description</span><span class="sep">:</span>
+                <span class="value desc-value" style="{description_bold_style}">{description}</span></div>'''
         visual_row_count += _estimate_text_lines(cert_number, chars_per_line=24)
         rows_html += f'''<div class="field-row">
             <span class="label">Certificate No</span><span class="sep">:</span>
@@ -211,10 +215,11 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
         for cf in (fields.get('custom_fields') or []):
             if cf.get('key') or cf.get('value'):
                 custom_value = _esc(_normalize_display_text(cf.get("value", "")))
+                custom_bold_style = 'font-weight:bold;' if cf.get('bold') else ''
                 visual_row_count += _estimate_text_lines(custom_value, chars_per_line=24, min_lines=1, max_lines=3)
                 rows_html += f'''<div class="field-row">
-                    <span class="label">{_esc(_normalize_display_text(cf.get("key", "")))}</span><span class="sep">:</span>
-                    <span class="value">{custom_value}</span></div>'''
+                    <span class="label" style="{custom_bold_style}">{_esc(_normalize_display_text(cf.get("key", "")))}</span><span class="sep">:</span>
+                    <span class="value" style="{custom_bold_style}">{custom_value}</span></div>'''
     else:
         allowed = CERTIFICATE_FIELD_CONFIG.get(group, [])
         schema_fields = schema.get('fields') or []
@@ -400,6 +405,8 @@ body {
   width: 8.6cm;
   height: 5.5cm;
   padding: 0;
+  border-top: 1px dotted #2b1fb4;
+  border-left: 1px dotted #2b1fb4;
   box-sizing: border-box;
   position: relative;
   font-family: 'Poppins', Arial, sans-serif;
@@ -410,6 +417,31 @@ body {
 
 .card-header {
   position: relative;
+  --brown-line-trim-width: 50px;
+  --brown-line-trim-top: 48px;
+  --brown-line-trim-height: 9px;
+}
+
+.card-header::after {
+  content: "";
+  position: absolute;
+  top: var(--brown-line-trim-top);
+  right: 0;
+  width: var(--brown-line-trim-width);
+  height: var(--brown-line-trim-height);
+  background: white;
+  z-index: 1;
+}
+
+.card-header::before {
+  content: "";
+  position: absolute;
+  top: 43px;
+  right: 66px;
+  width: 6px;
+  height: 17px;
+  background: white;
+  z-index: 1;
 }
 
 .gac-header-img {
@@ -421,7 +453,7 @@ body {
 .header-right {
   position: absolute;
   top: 3.5px;
-  right: 4px;
+  right: 10px;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -438,12 +470,12 @@ body {
 }
 
 .qr-code {
-  width: 48px;
-  height: 46px;
+  width: 52px;
+  height: 52px;
   object-fit: contain;
   flex-shrink: 0;
-  margin-top: 4px;
-  margin-right: -2px;
+  margin-top: 0;
+  margin-right: 6px;
   align-self: flex-start;
 }
 
@@ -585,10 +617,6 @@ body {
 }
 
 /* Back card */
-.back-card {
-  border-top: 1px dashed #2b1fb4;
-  border-left: 1px dashed #2b1fb4;
-}
 .back-media {
   width: 100%;
   height: 100%;
