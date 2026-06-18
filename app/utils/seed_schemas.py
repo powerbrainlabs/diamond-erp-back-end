@@ -288,7 +288,7 @@ async def seed_default_certificate_types(db):
             "uuid": str(uuid.uuid4()),
             "slug": "loose_diamond",
             "name": "Loose Diamond",
-            "description": "Unmounted diamond certification",
+            "description": "",
             "icon": "gem",
             "display_order": 1,
             "has_photo": True,
@@ -304,7 +304,7 @@ async def seed_default_certificate_types(db):
             "uuid": str(uuid.uuid4()),
             "slug": "loose_stone",
             "name": "Loose Gemstone",
-            "description": "Unmounted gemstone certification",
+            "description": "",
             "icon": "gem",
             "display_order": 2,
             "has_photo": True,
@@ -319,7 +319,7 @@ async def seed_default_certificate_types(db):
         {
             "uuid": str(uuid.uuid4()),
             "slug": "single_mounded",
-            "name": "Single Mounted Gemstone",
+            "name": "Single Mounted Jewellery",
             "description": "Single gemstone in setting",
             "icon": "gem",
             "display_order": 3,
@@ -335,7 +335,7 @@ async def seed_default_certificate_types(db):
         {
             "uuid": str(uuid.uuid4()),
             "slug": "double_mounded",
-            "name": "Double Mounded",
+            "name": "Double Mounted Jewellery",
             "description": "Two gemstones in setting",
             "icon": "gem",
             "display_order": 4,
@@ -652,7 +652,7 @@ async def seed_default_category_schemas(db):
         "uuid": str(uuid.uuid4()),
         "name": "Loose Diamond Certificate",
         "group": "loose_diamond",
-        "description": "Unmounted diamond certification",
+        "description": "",
         "description_template": "One {shape} shaped {conclusion} weighing {weight}.",
         "fields": loose_diamond_fields,
         "is_active": True,
@@ -809,7 +809,7 @@ async def seed_default_category_schemas(db):
         "uuid": str(uuid.uuid4()),
         "name": "Loose Gemstone Certificate",
         "group": "loose_stone",
-        "description": "Unmounted gemstone certification",
+        "description": "",
         "description_template": "",
         "fields": loose_stone_fields,
         "is_active": True,
@@ -956,7 +956,7 @@ async def seed_default_category_schemas(db):
 
     schemas.append({
         "uuid": str(uuid.uuid4()),
-        "name": "Single Mounted Gemstone Certificate",
+        "name": "Single Mounted Jewellery Certificate",
         "group": "single_mounded",
         "description": "Single gemstone in setting",
         "description_template": "",
@@ -1167,7 +1167,7 @@ async def seed_default_category_schemas(db):
 
     schemas.append({
         "uuid": str(uuid.uuid4()),
-        "name": "Double Mounded Certificate",
+        "name": "Double Mounted Jewellery Certificate",
         "group": "double_mounded",
         "description": "Two gemstones in setting",
         "description_template": "",
