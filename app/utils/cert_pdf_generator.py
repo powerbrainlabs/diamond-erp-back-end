@@ -304,9 +304,11 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             max_lines = 1 if is_comment else (3 if fname == 'conclusion' else 2)
             visual_row_count += _estimate_text_lines(display, chars_per_line=chars_per_line, min_lines=1, max_lines=max_lines)
 
+            comment_font_style = 'font-size:0.900em;' if is_comment and display else ''
+
             rows_html += f'''<div class="{row_class}">
                 <span class="label" style="{bold_style}">{label}</span><span class="sep">:</span>
-                <span class="{val_class}" style="{bold_style}{capitalize}">{display}</span></div>'''
+                <span class="{val_class}" style="{bold_style}{capitalize}{comment_font_style}">{display}</span></div>'''
 
     # Density: estimate visual lines so wrapped values affect PDF fitting.
     row_count = max(visual_row_count, rows_html.count('field-row'))
@@ -543,7 +545,7 @@ body {
   z-index: 1;
   font-size: 0.52em;
   line-height: 9.2px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .field-row {
@@ -556,7 +558,9 @@ body {
 .field-row.full-width { width: 100%; }
 
 .comment-row {
-  width: calc(100% + 34px) !important;
+  width: calc(100% + 20px);
+  margin-right: -10px;
+  box-sizing: border-box;
 }
 
 .comment-row .label {
@@ -600,14 +604,9 @@ body {
 .comment-value {
   flex: 1;
   min-width: 0;
-  font-size: 1em;
   line-height: 1.3;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: normal;
-  letter-spacing: -0.02em;
-  word-spacing: -0.02em;
+  overflow: visible;
   padding-bottom: 2px;
 }
 
