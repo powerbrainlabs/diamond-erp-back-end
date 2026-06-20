@@ -560,7 +560,9 @@ body {
 }
 
 .comment-row .label {
-  width: 82px;
+  width: 110px;
+  min-width: 110px;
+  white-space: nowrap;
 }
 
 .comment-row .sep {
@@ -568,9 +570,11 @@ body {
 }
 
 .label {
-  width: 82px;
+  width: 110px;
+  min-width: 110px;
   flex-shrink: 0;
   font-weight: 400;
+  white-space: nowrap;
 }
 
 .sep {
