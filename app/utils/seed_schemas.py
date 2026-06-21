@@ -107,7 +107,7 @@ async def seed_default_attributes(db):
         for conclusion in diamond_conclusions:
             extra = {}
             if conclusion == "Natural Diamond":
-                extra = {"sg": "3.52", "hardness": "10"}
+                extra = {"sg": "3.52", "ri": "2.417", "hardness": "10"}
             attributes.append({
                 "uuid": str(uuid.uuid4()),
                 "group": schema_group,
@@ -565,12 +565,39 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Hardness",
-            "field_name": "hardness",
-            "field_type": "text",
+            "label": "SG / RI / Hardness",
+            "field_name": "sg_ri_hardness",
+            "field_type": "composite",
             "is_required": False,
-            "placeholder": "Hardness",
-            "unit": "",
+            "sub_fields": [
+                {
+                    "field_name": "sg",
+                    "name": "SG",
+                    "field_type": "text",
+                    "is_required": False,
+                    "placeholder": "Specific gravity",
+                    "default_value": "3.52",
+                    "display_order": 0,
+                },
+                {
+                    "field_name": "ri",
+                    "name": "RI",
+                    "field_type": "text",
+                    "is_required": False,
+                    "placeholder": "Refractive index",
+                    "default_value": "2.417",
+                    "display_order": 1,
+                },
+                {
+                    "field_name": "hardness",
+                    "name": "Hardness",
+                    "field_type": "text",
+                    "is_required": False,
+                    "placeholder": "Hardness",
+                    "default_value": "10",
+                    "display_order": 2,
+                },
+            ],
             "display_order": 2,
         },
         {
@@ -600,15 +627,6 @@ async def seed_default_category_schemas(db):
             "placeholder": "Weight in carats",
             "unit": "cts",
             "display_order": 5,
-        },
-        {
-            "field_id": str(uuid.uuid4()),
-            "label": "SG",
-            "field_name": "sg",
-            "field_type": "text",
-            "is_required": False,
-            "placeholder": "Specific gravity",
-            "display_order": 6,
         },
         {
             "field_id": str(uuid.uuid4()),
@@ -741,31 +759,40 @@ async def seed_default_category_schemas(db):
         },
         {
             "field_id": str(uuid.uuid4()),
-            "label": "Hardness",
-            "field_name": "hardness",
-            "field_type": "text",
+            "label": "SG / RI / Hardness",
+            "field_name": "sg_ri_hardness",
+            "field_type": "composite",
             "is_required": False,
-            "placeholder": "Hardness",
-            "unit": "",
+            "sub_fields": [
+                {
+                    "field_name": "sg",
+                    "name": "SG",
+                    "field_type": "text",
+                    "is_required": False,
+                    "placeholder": "Specific gravity",
+                    "default_value": "3.52",
+                    "display_order": 0,
+                },
+                {
+                    "field_name": "ri",
+                    "name": "RI",
+                    "field_type": "text",
+                    "is_required": False,
+                    "placeholder": "Refractive index",
+                    "default_value": "2.417",
+                    "display_order": 1,
+                },
+                {
+                    "field_name": "hardness",
+                    "name": "Hardness",
+                    "field_type": "text",
+                    "is_required": False,
+                    "placeholder": "Hardness",
+                    "default_value": "10",
+                    "display_order": 2,
+                },
+            ],
             "display_order": 5,
-        },
-        {
-            "field_id": str(uuid.uuid4()),
-            "label": "SG",
-            "field_name": "sg",
-            "field_type": "text",
-            "is_required": False,
-            "placeholder": "Specific gravity",
-            "display_order": 6,
-        },
-        {
-            "field_id": str(uuid.uuid4()),
-            "label": "RI",
-            "field_name": "ri",
-            "field_type": "text",
-            "is_required": False,
-            "placeholder": "Refractive index",
-            "display_order": 7,
         },
         {
             "field_id": str(uuid.uuid4()),
@@ -774,7 +801,7 @@ async def seed_default_category_schemas(db):
             "field_type": "creatable_select",
             "is_required": False,
             "options": [],
-            "display_order": 8,
+            "display_order": 6,
         },
         {
             "field_id": str(uuid.uuid4()),
@@ -784,7 +811,7 @@ async def seed_default_category_schemas(db):
             "is_required": False,
             "placeholder": "Select or type conclusion",
             "options": ["Natural", "Synthetic", "Treated", "Heat Treated", "Unheated", "No Treatment", "Beryllium Treated", "Glass Filled", "Fracture Filled", "Irradiated", "Coated", "Dyed"],
-            "display_order": 9,
+            "display_order": 7,
         },
         {
             "field_id": str(uuid.uuid4()),
@@ -875,6 +902,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Hardness",
+            "default_value": "10",
             "unit": "",
             "display_order": 5,
         },
@@ -885,6 +913,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Specific gravity",
+            "default_value": "3.52",
             "display_order": 6,
         },
         {
@@ -894,6 +923,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Refractive index",
+            "default_value": "2.417",
             "display_order": 7,
         },
         {
@@ -1081,6 +1111,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Hardness",
+            "default_value": "10",
             "unit": "",
             "display_order": 7,
             "conditional_logic": {
@@ -1095,6 +1126,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Specific gravity",
+            "default_value": "3.52",
             "display_order": 8,
             "conditional_logic": {
                 "show_if_field": "primary_gemstone",
@@ -1108,6 +1140,7 @@ async def seed_default_category_schemas(db):
             "field_type": "text",
             "is_required": False,
             "placeholder": "Refractive index",
+            "default_value": "2.417",
             "display_order": 9,
             "conditional_logic": {
                 "show_if_field": "primary_gemstone",

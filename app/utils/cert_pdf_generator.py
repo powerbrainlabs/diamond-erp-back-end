@@ -45,7 +45,7 @@ def _fallback_qr_url(cert_uuid: str) -> str:
 
 CERTIFICATE_FIELD_CONFIG = {
     'single_diamond': ['gross_weight', 'diamond_weight', 'cut', 'clarity', 'color', 'conclusion', 'comment'],
-    'loose_diamond': ['dimension', 'weight', 'shape', 'clarity', 'color', 'hardness', 'sg', 'microscopic_obs', 'conclusion', 'comment'],
+    'loose_diamond': ['dimension', 'weight', 'shape', 'clarity', 'color', 'sg_ri_hardness', 'microscopic_obs', 'conclusion', 'comment'],
     'loose_stone': ['dimension', 'color', 'weight', 'shape', 'sg', 'ri', 'hardness', 'microscopic_obs', 'conclusion', 'comment'],
     'single_mounded': ['gross_weight', 'stone_weight', 'shape', 'sg', 'hardness', 'ri', 'microscopic_obs', 'conclusion', 'comment'],
     'double_mounded': ['gross_weight', 'primary_stone_weight', 'secondary_stone_weight', 'shape', 'sg', 'ri', 'hardness', 'cut', 'clarity', 'colour', 'microscopic_obs', 'conclusion'],
@@ -280,6 +280,18 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
                 if gem_name:
                     clean_gem = re.sub(r'^natural\s+', '', gem_name, flags=re.IGNORECASE)
                     label = _normalize_display_text(f'{clean_gem} Weight')
+
+            # sg_ri_hardness composite: render as 3 separate rows
+            if fname == 'sg_ri_hardness' and isinstance(raw, dict):
+                for sub_key, sub_label in (('sg', 'SG'), ('ri', 'RI'), ('hardness', 'Hardness')):
+                    sub_val = raw.get(sub_key, '')
+                    if not sub_val:
+                        continue
+                    visual_row_count += 1
+                    rows_html += f'''<div class="field-row">
+                        <span class="label">{_esc(sub_label)}</span><span class="sep">:</span>
+                        <span class="value">{_esc(str(sub_val))}</span></div>'''
+                continue
 
             if field.get('field_type') == 'custom' and isinstance(raw, dict):
                 label = _normalize_display_text(raw.get('custom_label', label))
