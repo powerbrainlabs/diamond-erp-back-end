@@ -671,7 +671,7 @@ async def seed_default_category_schemas(db):
         "name": "Loose Diamond Certificate",
         "group": "loose_diamond",
         "description": "",
-        "description_template": "One {shape} shaped {conclusion} weighing {weight}.",
+        "description_template": "",
         "fields": loose_diamond_fields,
         "is_active": True,
         "is_deleted": False,

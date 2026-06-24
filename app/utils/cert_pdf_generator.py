@@ -46,13 +46,14 @@ def _fallback_qr_url(cert_uuid: str) -> str:
 CERTIFICATE_FIELD_CONFIG = {
     'single_diamond': ['gross_weight', 'diamond_weight', 'cut', 'clarity', 'color', 'conclusion', 'comment'],
     'loose_diamond': ['dimension', 'weight', 'shape', 'clarity', 'color', 'sg_ri_hardness', 'microscopic_obs', 'conclusion', 'comment'],
-    'loose_stone': ['dimension', 'color', 'weight', 'shape', 'sg', 'ri', 'hardness', 'microscopic_obs', 'conclusion', 'comment'],
+    'loose_stone': ['dimension', 'color', 'weight', 'shape', 'sg_ri_hardness', 'sg', 'ri', 'hardness', 'microscopic_obs', 'conclusion', 'comment'],
     'single_mounded': ['gross_weight', 'stone_weight', 'shape', 'sg', 'hardness', 'ri', 'microscopic_obs', 'conclusion', 'comment'],
     'double_mounded': ['gross_weight', 'primary_stone_weight', 'secondary_stone_weight', 'shape', 'sg', 'ri', 'hardness', 'cut', 'clarity', 'colour', 'microscopic_obs', 'conclusion'],
     'navaratna': ['gross_weight', 'diamond_weight', 'cut', 'color', 'clarity', 'conclusion', 'comment'],
 }
 BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'stone_weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion'}
 GEMSTONE_CERTIFICATE_GROUPS = {'loose_stone', 'single_mounded', 'double_mounded'}
+NO_DESCRIPTION_GROUPS = {'loose_stone', 'single_mounded', 'double_mounded', 'loose_diamond'}
 
 
 def _normalize_display_text(value: Any) -> str:
@@ -177,7 +178,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     qr_url = img_map.get(_fallback_qr_url(cert['uuid'])) or _fallback_qr_url(cert['uuid']) if cert.get('uuid') else ''
     cert_number = _esc(_normalize_display_text(cert.get('certificate_number') or ''))
     description = ''
-    if group not in GEMSTONE_CERTIFICATE_GROUPS:
+    if group not in NO_DESCRIPTION_GROUPS:
         description = _esc(_normalize_display_text(cert.get('generated_description') or fields.get('description') or ''))
 
     # Header images
@@ -316,7 +317,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             max_lines = 1 if is_comment else (3 if fname == 'conclusion' else 2)
             visual_row_count += _estimate_text_lines(display, chars_per_line=chars_per_line, min_lines=1, max_lines=max_lines)
 
-            comment_font_style = 'font-size:0.900em;' if is_comment and display else ''
+            comment_font_style = ''
 
             rows_html += f'''<div class="{row_class}">
                 <span class="label" style="{bold_style}">{label}</span><span class="sep">:</span>
@@ -576,25 +577,25 @@ body {
 }
 
 .comment-row .label {
-  width: 110px;
-  min-width: 110px;
+  width: 93px;
+  min-width: 93px;
   white-space: nowrap;
 }
 
 .comment-row .sep {
-  margin: 0 5px;
+  margin: 0 4px;
 }
 
 .label {
-  width: 110px;
-  min-width: 110px;
+  width: 93px;
+  min-width: 93px;
   flex-shrink: 0;
   font-weight: 400;
   white-space: nowrap;
 }
 
 .sep {
-  margin: 0 5px;
+  margin: 0 4px;
   flex-shrink: 0;
 }
 
@@ -616,7 +617,6 @@ body {
 .comment-value {
   flex: 1;
   min-width: 0;
-  line-height: 1.3;
   white-space: nowrap;
   overflow: visible;
   padding-bottom: 2px;
