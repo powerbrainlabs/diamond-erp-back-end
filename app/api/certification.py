@@ -19,7 +19,7 @@ from ..utils.template_renderer import render_description_template
 
 router = APIRouter(prefix="/api/certifications", tags=["Certifications"])
 
-GEMSTONE_CERTIFICATE_GROUPS = {"loose_stone", "single_mounded", "double_mounded"}
+GEMSTONE_CERTIFICATE_GROUPS = {"loose_diamond", "loose_stone"}
 
 
 def _render_certificate_description(schema: Optional[Dict[str, Any]], fields: Dict[str, Any]) -> str:
@@ -30,10 +30,11 @@ def _render_certificate_description(schema: Optional[Dict[str, Any]], fields: Di
         return ""
 
     if schema.get("group") == "navaratna":
+        metal = str(fields.get("metal") or "").strip()
         category = str(fields.get("category") or "").strip()
         diamond_piece = str(fields.get("diamond_piece") or "1").strip() or "1"
         if category:
-            return f"One NR {category} studded with {diamond_piece} Natural Diamond and Colour Stones."
+            return f"One {metal} {category} studded with {diamond_piece} Natural Diamond and Colour Stones."
 
     description_template = schema.get("description_template")
     if description_template:

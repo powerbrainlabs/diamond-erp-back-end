@@ -45,7 +45,7 @@ def _fallback_qr_url(cert_uuid: str) -> str:
 
 CERTIFICATE_FIELD_CONFIG = {
     'single_diamond': ['gross_weight', 'diamond_weight', 'cut', 'clarity', 'color', 'conclusion', 'comment'],
-    'loose_diamond': ['dimension', 'weight', 'shape', 'clarity', 'color', 'hardness', 'sg', 'microscopic_obs', 'conclusion', 'comment'],
+    'loose_diamond': ['dimension', 'weight', 'shape', 'clarity', 'color', 'sg_ri_hardness', 'microscopic_obs', 'conclusion', 'comment'],
     'loose_stone': ['dimension', 'color', 'weight', 'shape', 'sg', 'ri', 'hardness', 'microscopic_obs', 'conclusion', 'comment'],
     'single_mounded': ['gross_weight', 'stone_weight', 'shape', 'sg', 'hardness', 'ri', 'microscopic_obs', 'conclusion', 'comment'],
     'double_mounded': ['gross_weight', 'primary_stone_weight', 'secondary_stone_weight', 'shape', 'sg', 'ri', 'hardness', 'cut', 'clarity', 'colour', 'microscopic_obs', 'conclusion'],
@@ -281,6 +281,18 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
                     clean_gem = re.sub(r'^natural\s+', '', gem_name, flags=re.IGNORECASE)
                     label = _normalize_display_text(f'{clean_gem} Weight')
 
+            # sg_ri_hardness composite: render as 3 separate rows
+            if fname == 'sg_ri_hardness' and isinstance(raw, dict):
+                for sub_key, sub_label in (('sg', 'SG'), ('ri', 'RI'), ('hardness', 'Hardness')):
+                    sub_val = raw.get(sub_key, '')
+                    if not sub_val:
+                        continue
+                    visual_row_count += 1
+                    rows_html += f'''<div class="field-row">
+                        <span class="label">{_esc(sub_label)}</span><span class="sep">:</span>
+                        <span class="value">{_esc(str(sub_val))}</span></div>'''
+                continue
+
             if field.get('field_type') == 'custom' and isinstance(raw, dict):
                 label = _normalize_display_text(raw.get('custom_label', label))
                 display = _esc(_normalize_display_text(raw.get('custom_value', '')))
@@ -304,9 +316,11 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             max_lines = 1 if is_comment else (3 if fname == 'conclusion' else 2)
             visual_row_count += _estimate_text_lines(display, chars_per_line=chars_per_line, min_lines=1, max_lines=max_lines)
 
+            comment_font_style = 'font-size:0.900em;' if is_comment and display else ''
+
             rows_html += f'''<div class="{row_class}">
                 <span class="label" style="{bold_style}">{label}</span><span class="sep">:</span>
-                <span class="{val_class}" style="{bold_style}{capitalize}">{display}</span></div>'''
+                <span class="{val_class}" style="{bold_style}{capitalize}{comment_font_style}">{display}</span></div>'''
 
     # Density: estimate visual lines so wrapped values affect PDF fitting.
     row_count = max(visual_row_count, rows_html.count('field-row'))
@@ -543,7 +557,7 @@ body {
   z-index: 1;
   font-size: 0.52em;
   line-height: 9.2px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .field-row {
@@ -556,11 +570,15 @@ body {
 .field-row.full-width { width: 100%; }
 
 .comment-row {
-  width: calc(100% + 34px) !important;
+  width: calc(100% + 20px);
+  margin-right: -10px;
+  box-sizing: border-box;
 }
 
 .comment-row .label {
-  width: 82px;
+  width: 110px;
+  min-width: 110px;
+  white-space: nowrap;
 }
 
 .comment-row .sep {
@@ -568,9 +586,11 @@ body {
 }
 
 .label {
-  width: 82px;
+  width: 110px;
+  min-width: 110px;
   flex-shrink: 0;
   font-weight: 400;
+  white-space: nowrap;
 }
 
 .sep {
@@ -596,14 +616,9 @@ body {
 .comment-value {
   flex: 1;
   min-width: 0;
-  font-size: 1em;
   line-height: 1.3;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: normal;
-  letter-spacing: -0.02em;
-  word-spacing: -0.02em;
+  overflow: visible;
   padding-bottom: 2px;
 }
 
