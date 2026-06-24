@@ -15,7 +15,7 @@ FastAPI backend application for the Diamond ERP system. n
 
 This project includes a `docker-compose.yml` file that sets up:
 - Backend API service
-- MongoDB database
+- MongoDB database 
 - MinIO object storage
 
 ### Quick Start with Docker
