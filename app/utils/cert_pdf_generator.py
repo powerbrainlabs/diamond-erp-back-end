@@ -527,38 +527,39 @@ body {
 .cert-photo-frame {
   position: absolute;
   top: 100px;
-  right: 2px;
+  right: 14px;
+  width: 89px;
   z-index: 2;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 3px;
+  gap: 10px;
 }
 
 .cert-photo {
   display: block;
+  flex: 1;
+  min-width: 0;
   height: 0.8in;
-  width: 0.9in;
   object-fit: contain;
   object-position: center;
 }
 
 .cert-photo-frame.square-frame {
-  gap: 6px;
+  /* same position as regular - fixed-width wrapper keeps label aligned */
 }
 
 .cert-photo.square {
   height: 0.6in;
-  width: 0.6in;
 }
 
 .approx-label {
+  flex-shrink: 0;
   font-size: 5.5px;
   font-weight: 400;
   white-space: nowrap;
   writing-mode: vertical-rl;
   text-orientation: mixed;
-  margin-left: 2px;
 }
 
 .card-body {
