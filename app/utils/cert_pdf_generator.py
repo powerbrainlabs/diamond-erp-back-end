@@ -30,6 +30,36 @@ def _build_font_face_css() -> str:
             css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('file://{font_path}') format('truetype');}}\n"
     return css
 
+
+def _is_square_image(data_uri: str) -> bool:
+    """Return True if the image aspect ratio is close to 1:1 (0.85–1.15)."""
+    try:
+        _, b64data = data_uri.split(",", 1)
+        raw = base64.b64decode(b64data)
+        if raw[:8] == b'\x89PNG\r\n\x1a\n':
+            w, h = struct.unpack('>II', raw[16:24])
+        elif raw[:2] == b'\xff\xd8':
+            i = 2
+            w = h = 0
+            while i < len(raw) - 9:
+                if raw[i] != 0xff:
+                    break
+                marker = raw[i + 1]
+                if marker in (0xC0, 0xC1, 0xC2):
+                    h, w = struct.unpack('>HH', raw[i + 5:i + 9])
+                    break
+                length = struct.unpack('>H', raw[i + 2:i + 4])[0]
+                i += 2 + length
+            if not w or not h:
+                return False
+        else:
+            return False
+        ratio = w / h if h else 1
+        return 0.85 <= ratio <= 1.15
+    except Exception:
+        return False
+
+
 GAC_HEADER_B64 = _b64_img(str(ASSETS_DIR / "gac_card_first_image.png"))
 BG_PARTICLES_B64 = _b64_img(str(ASSETS_DIR / "BG-particles1.png"))
 POPPINS_FONT_CSS = _build_font_face_css()
@@ -190,13 +220,13 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
         qr_html = f'<img src="{_esc(qr_url)}" class="qr-code" alt="QR">'
 
     # Photo
-    photo_html = (
-        f'''<div class="cert-photo-frame">
-  <img src="{_esc(photo_url)}" class="cert-photo" alt="Photo">
+    NO_IMAGE_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70'%3E%3Crect fill='%23eeeeee' width='70' height='70'/%3E%3Ctext fill='%23aaaaaa' font-family='sans-serif' font-size='8' text-anchor='middle' x='35' y='38'%3ENo Image%3C/text%3E%3C/svg%3E"
+    _photo_src = _esc(photo_url) if photo_url else NO_IMAGE_SVG
+    _photo_class = "cert-photo square" if photo_url and _is_square_image(photo_url) else "cert-photo"
+    photo_html = f'''<div class="cert-photo-frame">
+  <img src="{_photo_src}" class="{_photo_class}" alt="Photo">
   <span class="approx-label">Approx Photo</span>
 </div>'''
-        if photo_url else ''
-    )
 
     # Build field rows
     rows_html = ''
@@ -497,17 +527,29 @@ body {
 .cert-photo-frame {
   position: absolute;
   top: 100px;
-  right: 4px;
+  right: 2px;
   z-index: 2;
   display: flex;
   flex-direction: row;
   align-items: center;
+  gap: 3px;
 }
 
 .cert-photo {
   display: block;
-  height: 0.535in;
-  width: auto;
+  height: 0.8in;
+  width: 0.9in;
+  object-fit: contain;
+  object-position: center;
+}
+
+.cert-photo-frame.square-frame {
+  gap: 6px;
+}
+
+.cert-photo.square {
+  height: 0.6in;
+  width: 0.6in;
 }
 
 .approx-label {
@@ -717,7 +759,21 @@ FIT_SCRIPT = """
     window.__cardsFitted = true;
   }
 
-  const start = () => requestAnimationFrame(() => requestAnimationFrame(run));
+  // Detect square photos and apply larger size class
+  function applySquarePhotoClasses() {
+    document.querySelectorAll('.cert-photo').forEach(function(img) {
+      const w = img.naturalWidth, h = img.naturalHeight;
+      if (!w || !h) return;
+      const ratio = w / h;
+      if (ratio >= 0.85 && ratio <= 1.15) {
+        img.classList.add('square');
+        const frame = img.closest('.cert-photo-frame');
+        if (frame) frame.classList.add('square-frame');
+      }
+    });
+  }
+
+  const start = () => requestAnimationFrame(() => { applySquarePhotoClasses(); requestAnimationFrame(run); });
 
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(start).catch(start);
