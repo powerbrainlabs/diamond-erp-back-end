@@ -83,7 +83,7 @@ CERTIFICATE_FIELD_CONFIG = {
 }
 BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'stone_weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion'}
 GEMSTONE_CERTIFICATE_GROUPS = {'loose_stone', 'single_mounded', 'double_mounded'}
-NO_DESCRIPTION_GROUPS = {'loose_stone', 'single_mounded', 'double_mounded', 'loose_diamond'}
+NO_DESCRIPTION_GROUPS = {'loose_stone', 'loose_diamond'}
 
 
 def _normalize_display_text(value: Any) -> str:
