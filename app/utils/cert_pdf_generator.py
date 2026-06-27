@@ -344,7 +344,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
             row_class = 'field-row full-width comment-row' if is_comment else ('field-row full-width' if is_full else 'field-row')
             val_class = 'value comment-value' if is_comment else ('value desc-value' if is_full else 'value')
             chars_per_line = 42 if is_full else 24
-            max_lines = 2 if is_comment else (3 if fname == 'conclusion' else 2)
+            max_lines = 1 if is_comment else (3 if fname == 'conclusion' else 2)
             visual_row_count += _estimate_text_lines(display, chars_per_line=chars_per_line, min_lines=1, max_lines=max_lines)
 
             comment_font_style = ''
@@ -660,9 +660,8 @@ body {
 .comment-value {
   flex: 1;
   min-width: 0;
-  white-space: normal;
-  word-wrap: break-word;
-  overflow: visible;
+  white-space: nowrap;
+  overflow: hidden;
   padding-bottom: 2px;
 }
 
@@ -775,7 +774,21 @@ FIT_SCRIPT = """
     });
   }
 
-  const start = () => requestAnimationFrame(() => { applySquarePhotoClasses(); requestAnimationFrame(run); });
+  function fitCommentValues() {
+    document.querySelectorAll('.comment-value').forEach(function(el) {
+      const parent = el.closest('.comment-row');
+      if (!parent) return;
+      let fs = parseFloat(window.getComputedStyle(el).fontSize);
+      const minFs = fs * 0.72;
+      for (let i = 0; i < 10; i++) {
+        if (el.scrollWidth <= el.clientWidth + 1) break;
+        fs = Math.max(minFs, fs * 0.94);
+        el.style.fontSize = fs.toFixed(2) + 'px';
+      }
+    });
+  }
+
+  const start = () => requestAnimationFrame(() => { applySquarePhotoClasses(); fitCommentValues(); requestAnimationFrame(run); });
 
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(start).catch(start);
