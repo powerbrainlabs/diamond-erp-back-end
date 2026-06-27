@@ -757,6 +757,7 @@ FIT_SCRIPT = """
 
   function run() {
     document.querySelectorAll('.cert-card:not(.back-card)').forEach(fitCard);
+    alignPhotoToСertNo();
     window.__cardsFitted = true;
   }
 
@@ -771,6 +772,28 @@ FIT_SCRIPT = """
         const frame = img.closest('.cert-photo-frame');
         if (frame) frame.classList.add('square-frame');
       }
+    });
+  }
+
+  function alignPhotoToСertNo() {
+    document.querySelectorAll('.cert-card:not(.back-card)').forEach(function(card) {
+      const frame = card.querySelector('.cert-photo-frame');
+      const photo = frame && frame.querySelector('.cert-photo');
+      if (!frame || !photo) return;
+      // Only apply to rectangle (non-square) photos
+      if (photo.classList.contains('square')) return;
+      // Find Certificate No row
+      const rows = card.querySelectorAll('.field-row');
+      let certNoRow = null;
+      rows.forEach(function(row) {
+        const label = row.querySelector('.label');
+        if (label && label.textContent.trim() === 'Certificate No') certNoRow = row;
+      });
+      if (!certNoRow) return;
+      const cardRect = card.getBoundingClientRect();
+      const certNoRect = certNoRow.getBoundingClientRect();
+      const newTop = certNoRect.top - cardRect.top;
+      frame.style.top = newTop + 'px';
     });
   }
 
