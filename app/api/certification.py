@@ -26,10 +26,24 @@ def _render_certificate_description(schema: Optional[Dict[str, Any]], fields: Di
     if not schema or not fields:
         return ""
 
-    if schema.get("group") in GEMSTONE_CERTIFICATE_GROUPS:
+    group = schema.get("group")
+
+    if group == "double_mounded":
+        metal = str(fields.get("metal") or "").strip()
+        category = str(fields.get("category") or "").strip()
+        primary_gemstone = str(fields.get("primary_gemstone") or "").strip()
+        secondary_gemstone = str(fields.get("secondary_gemstone") or "").strip()
+        primary_piece = str(fields.get("primary_gemstone_piece") or "").strip()
+        secondary_piece = str(fields.get("secondary_gemstone_piece") or "").strip()
+        if category and primary_gemstone:
+            primary_part = f"{primary_piece} Natural {primary_gemstone}" if primary_piece else f"Natural {primary_gemstone}"
+            secondary_part = f"{secondary_piece} {secondary_gemstone}" if secondary_piece else secondary_gemstone
+            return f"One {metal} {category} studded with {primary_part} and {secondary_part}.".strip()
+
+    if group in GEMSTONE_CERTIFICATE_GROUPS:
         return ""
 
-    if schema.get("group") == "navaratna":
+    if group == "navaratna":
         metal = str(fields.get("metal") or "").strip()
         category = str(fields.get("category") or "").strip()
         diamond_piece = str(fields.get("diamond_piece") or "1").strip() or "1"
