@@ -34,7 +34,7 @@ def _render_certificate_description(schema: Optional[Dict[str, Any]], fields: Di
         category = str(fields.get("category") or "").strip()
         diamond_piece = str(fields.get("diamond_piece") or "1").strip() or "1"
         if category:
-            return f"One {metal} {category} studded with {diamond_piece} Natural Diamond and Colour Stones."
+            return f"One NR {metal} {category} studded with {diamond_piece} Natural Diamond and Colour Stones."
 
     description_template = schema.get("description_template")
     if description_template:
