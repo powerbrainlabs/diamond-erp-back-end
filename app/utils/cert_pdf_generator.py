@@ -669,7 +669,7 @@ body {
   width: 100%;
   text-align: center;
   font-size: 0.39em;
-  padding-bottom: 1px;
+  padding-bottom: 8px;
   background: white;
   z-index: 3;
 }

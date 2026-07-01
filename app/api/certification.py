@@ -36,7 +36,7 @@ def _render_certificate_description(schema: Optional[Dict[str, Any]], fields: Di
         primary_piece = str(fields.get("primary_gemstone_piece") or "").strip()
         secondary_piece = str(fields.get("secondary_gemstone_piece") or "").strip()
         if category and primary_gemstone:
-            primary_part = f"{primary_piece} Natural {primary_gemstone}" if primary_piece else f"Natural {primary_gemstone}"
+            primary_part = f"{primary_piece} {primary_gemstone}" if primary_piece else primary_gemstone
             secondary_part = f"{secondary_piece} {secondary_gemstone}" if secondary_piece else secondary_gemstone
             return f"One {metal} {category} studded with {primary_part} and {secondary_part}.".strip()
 

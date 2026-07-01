@@ -1203,7 +1203,7 @@ async def seed_default_category_schemas(db):
         "name": "Double Mounted Jewellery Certificate",
         "group": "double_mounded",
         "description": "Two gemstones in setting",
-        "description_template": "One {metal} {category} studded with {primary_gemstone_piece} Natural {primary_gemstone} and {secondary_gemstone_piece} {secondary_gemstone}.",
+        "description_template": "One {metal} {category} studded with {primary_gemstone_piece} {primary_gemstone} and {secondary_gemstone_piece} {secondary_gemstone}.",
         "fields": double_mounded_fields,
         "is_active": True,
         "is_deleted": False,
