@@ -450,7 +450,10 @@ body {
   width: 8.69cm;
   height: 5.5cm;
   padding: 0;
-  border: 1px dotted #2b1fb4;
+  border-top: 1px dotted #2b1fb4;
+  border-left: 1px dotted #2b1fb4;
+  border-right: none;
+  border-bottom: none;
   box-sizing: border-box;
   position: relative;
   font-family: 'Poppins', Arial, sans-serif;
