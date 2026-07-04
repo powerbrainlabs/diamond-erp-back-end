@@ -76,9 +76,9 @@ def _fallback_qr_url(cert_uuid: str) -> str:
 CERTIFICATE_FIELD_CONFIG = {
     'single_diamond': ['gross_weight', 'diamond_weight', 'cut', 'clarity', 'color', 'conclusion', 'comment'],
     'loose_diamond': ['dimension', 'weight', 'shape', 'clarity', 'color', 'sg_ri_hardness', 'microscopic_obs', 'conclusion', 'comment'],
-    'loose_stone': ['dimension', 'color', 'weight', 'shape', 'sg_ri_hardness', 'sg', 'ri', 'hardness', 'microscopic_obs', 'conclusion', 'comment'],
-    'single_mounded': ['gross_weight', 'stone_weight', 'shape', 'sg', 'hardness', 'ri', 'microscopic_obs', 'conclusion', 'comment'],
-    'double_mounded': ['gross_weight', 'primary_stone_weight', 'secondary_stone_weight', 'shape', 'sg', 'ri', 'hardness', 'cut', 'clarity', 'colour', 'microscopic_obs', 'conclusion'],
+    'loose_stone': ['dimension', 'color', 'weight', 'shape', 'sg_ri_hardness', 'sg', 'hardness', 'microscopic_obs', 'conclusion', 'comment'],
+    'single_mounded': ['gross_weight', 'stone_weight', 'shape', 'sg', 'hardness', 'microscopic_obs', 'conclusion', 'comment'],
+    'double_mounded': ['gross_weight', 'primary_stone_weight', 'secondary_stone_weight', 'shape', 'ri', 'hardness', 'cut', 'clarity', 'colour', 'microscopic_obs', 'conclusion'],
     'navaratna': ['gross_weight', 'diamond_weight', 'cut', 'color', 'clarity', 'conclusion', 'comment'],
 }
 BOLD_FIELDS = {'gross_weight', 'diamond_weight', 'weight', 'stone_weight', 'gemstone_weight', 'primary_stone_weight', 'secondary_stone_weight', 'conclusion'}
@@ -314,7 +314,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 
             # sg_ri_hardness composite: render as 3 separate rows
             if fname == 'sg_ri_hardness' and isinstance(raw, dict):
-                for sub_key, sub_label in (('sg', 'SG'), ('ri', 'RI'), ('hardness', 'Hardness')):
+                for sub_key, sub_label in (('sg', 'SG'), ('hardness', 'Hardness')):
                     sub_val = raw.get(sub_key, '')
                     if not sub_val:
                         continue
@@ -429,10 +429,10 @@ body {
 .print-grid {
   display: flex;
   flex-direction: column;
-  gap: 2mm;
-  width: 175mm;
-  margin-left: 17.5mm;
-  margin-top: 7mm;
+  gap: 4mm;
+  width: 177mm;
+  margin-left: 16.5mm;
+  margin-top: 2mm;
   align-items: flex-start;
 }
 
@@ -447,11 +447,10 @@ body {
 
 .cert-card {
   background-color: white;
-  width: 8.6cm;
+  width: 8.69cm;
   height: 5.5cm;
   padding: 0;
-  border-top: 1px dotted #2b1fb4;
-  border-left: 1px dotted #2b1fb4;
+  border: 1px dotted #2b1fb4;
   box-sizing: border-box;
   position: relative;
   font-family: 'Poppins', Arial, sans-serif;
@@ -482,7 +481,7 @@ body {
   content: "";
   position: absolute;
   top: 43px;
-  right: 66px;
+  right: 60px;
   width: 6px;
   height: 17px;
   background: white;
@@ -501,7 +500,7 @@ body {
   right: 10px;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 0;
   z-index: 2;
 }
 
@@ -515,12 +514,13 @@ body {
 }
 
 .qr-code {
-  width: 52px;
-  height: 52px;
+  width: 49px;
+  height: 49px;
   object-fit: contain;
   flex-shrink: 0;
-  margin-top: 0;
-  margin-right: 6px;
+  margin-top: 3px;
+  margin-right: 2px;
+  margin-left: 6px;
   align-self: flex-start;
 }
 
