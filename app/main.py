@@ -87,6 +87,14 @@ async def startup_event():
     from .utils.seed_schemas import seed_default_category_schemas
     await seed_default_category_schemas(db)
 
+    # Seed management settings (hardness / SG / RI reference values)
+    from .utils.seed_schemas import seed_default_management_settings
+    await seed_default_management_settings(db)
+
+    # Seed organization profile
+    from .utils.seed_schemas import seed_default_organization
+    await seed_default_organization(db)
+
 # Routers
 app.include_router(auth_router)
 app.include_router(jobs_router)
