@@ -929,26 +929,68 @@ def _render_pdf_sync(html: str) -> bytes:
     return pdf_bytes
 
 
+def _render_pdf_worker(html: str, queue) -> None:
+    """Entry point for the isolated subprocess — see _render_pdf_isolated."""
+    try:
+        queue.put(("ok", _render_pdf_sync(html)))
+    except Exception as e:
+        queue.put(("error", f"{type(e).__name__}: {e}"))
+
+
+async def _render_pdf_isolated(html: str) -> bytes:
+    """Render one batch's PDF in a brand-new OS process.
+
+    Measured via docker stats across repeated in-process Chromium launches
+    (same live Python process, one after another via asyncio.to_thread):
+    memory plateaus well above single-request baseline between batches
+    (~242MiB vs ~97MiB) and climbs further each batch until the container's
+    cgroup OOM-killer takes out the renderer — Playwright/Chromium isn't
+    fully releasing OS-level resources back across repeated launches in the
+    same process. A fresh subprocess per batch sidesteps that entirely:
+    Linux reclaims 100% of a process's memory when it exits, regardless of
+    what leaked inside it.
+    """
+    import multiprocessing as mp
+    import queue as queue_module
+
+    ctx = mp.get_context("spawn")
+    result_queue = ctx.Queue()
+    proc = ctx.Process(target=_render_pdf_worker, args=(html, result_queue))
+    proc.start()
+    try:
+        # A hard crash (e.g. Chromium segfaulting) kills the process without
+        # ever putting anything on the queue — bound the wait so that fails
+        # loudly instead of hanging the request forever.
+        status, payload = await asyncio.to_thread(result_queue.get, True, 90)
+    except queue_module.Empty:
+        proc.terminate()
+        raise RuntimeError(
+            f"PDF render subprocess produced no result within 90s "
+            f"(exit code: {proc.exitcode})"
+        )
+    finally:
+        await asyncio.to_thread(proc.join, 5)
+    if status == "error":
+        raise RuntimeError(f"PDF render subprocess failed: {payload}")
+    return payload
+
+
 # A single render holds every cert's base64-encoded images plus the full
 # HTML string in memory at once, on top of Chromium's own footprint — fine
 # for a handful of certs, but a 100-cert request OOM-killed the backend
-# (300M container limit). Rendering in bounded batches and merging the
-# resulting PDFs keeps peak memory roughly constant no matter how many
-# certificates are requested overall (relevant since "download from
-# history" can mean anywhere from a handful up to tens of thousands).
-# Measured on the live 450M container via dmesg: a batch of 30 (6 rendered
-# PDF pages, ~60-90 embedded images) OOM-killed the chrome-headless renderer
-# process; a batch of 8 still did too (container-wide memory, not just this
-# process, crossed the limit). 4 plus the leaner launch flags above keeps
-# each render comfortably under it.
-PDF_BATCH_SIZE = 4
+# (300M container limit). Rendering in bounded batches (each isolated in
+# its own subprocess, see _render_pdf_isolated) and merging the resulting
+# PDFs keeps peak memory roughly constant no matter how many certificates
+# are requested overall (relevant since "download from history" can mean
+# anywhere from a handful up to tens of thousands).
+PDF_BATCH_SIZE = 8
 
 
 async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
     if len(certs) <= PDF_BATCH_SIZE:
         img_map = await _prefetch_images(certs)
         html = _build_html(certs, img_map)
-        return await asyncio.to_thread(_render_pdf_sync, html)
+        return await _render_pdf_isolated(html)
 
     import io
     from pypdf import PdfWriter, PdfReader
@@ -958,7 +1000,7 @@ async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
         batch = certs[i:i + PDF_BATCH_SIZE]
         img_map = await _prefetch_images(batch)
         html = _build_html(batch, img_map)
-        pdf_bytes = await asyncio.to_thread(_render_pdf_sync, html)
+        pdf_bytes = await _render_pdf_isolated(html)
         for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
             writer.add_page(page)
 
