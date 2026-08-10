@@ -919,7 +919,10 @@ def _render_pdf_sync(html: str) -> bytes:
 # resulting PDFs keeps peak memory roughly constant no matter how many
 # certificates are requested overall (relevant since "download from
 # history" can mean anywhere from a handful up to tens of thousands).
-PDF_BATCH_SIZE = 30
+# Measured on the live 450M container: a batch of 30 (6 rendered PDF pages,
+# ~60-90 embedded images) alone spiked Chromium to ~410MiB — still too close
+# to the ceiling. 8 keeps each render comfortably under that.
+PDF_BATCH_SIZE = 8
 
 
 async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
