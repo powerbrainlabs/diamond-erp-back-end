@@ -912,10 +912,37 @@ def _render_pdf_sync(html: str) -> bytes:
     return pdf_bytes
 
 
+# A single render holds every cert's base64-encoded images plus the full
+# HTML string in memory at once, on top of Chromium's own footprint — fine
+# for a handful of certs, but a 100-cert request OOM-killed the backend
+# (300M container limit). Rendering in bounded batches and merging the
+# resulting PDFs keeps peak memory roughly constant no matter how many
+# certificates are requested overall (relevant since "download from
+# history" can mean anywhere from a handful up to tens of thousands).
+PDF_BATCH_SIZE = 30
+
+
 async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
-    img_map = await _prefetch_images(certs)
-    html = _build_html(certs, img_map)
-    return await asyncio.to_thread(_render_pdf_sync, html)
+    if len(certs) <= PDF_BATCH_SIZE:
+        img_map = await _prefetch_images(certs)
+        html = _build_html(certs, img_map)
+        return await asyncio.to_thread(_render_pdf_sync, html)
+
+    import io
+    from pypdf import PdfWriter, PdfReader
+
+    writer = PdfWriter()
+    for i in range(0, len(certs), PDF_BATCH_SIZE):
+        batch = certs[i:i + PDF_BATCH_SIZE]
+        img_map = await _prefetch_images(batch)
+        html = _build_html(batch, img_map)
+        pdf_bytes = await asyncio.to_thread(_render_pdf_sync, html)
+        for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
+            writer.add_page(page)
+
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
 
 
 def generate_certificates_pdf(certs: List[Dict[str, Any]]) -> bytes:
