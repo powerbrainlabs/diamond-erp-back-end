@@ -136,6 +136,37 @@ def _estimate_text_lines(value: Any, chars_per_line: int, min_lines: int = 1, ma
     return max(min_lines, min(line_count, max_lines))
 
 
+def _downscale_for_pdf(content: bytes, content_type: str) -> tuple[bytes, str]:
+    """Shrink an image before it gets base64-embedded and rasterized by
+    Chromium for print. Certificate photos come straight from camera/phone
+    uploads (multi-MB, thousands of pixels wide) — full resolution is
+    pointless for a card-sized print photo, and decoding+rasterizing that
+    many full-size images at once is exactly what was pushing a single
+    8-cert batch to ~500MiB (confirmed via docker stats). Falls back to the
+    original bytes untouched on any failure (e.g. SVGs, corrupt data).
+    """
+    try:
+        from io import BytesIO
+        from PIL import Image
+
+        img = Image.open(BytesIO(content))
+        img.load()
+        max_dim = 900
+        if img.width > max_dim or img.height > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+        if img.mode in ("RGBA", "LA", "P"):
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+            img = background
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=78, optimize=True)
+        return out.getvalue(), "image/jpeg"
+    except Exception:
+        return content, content_type
+
+
 async def _fetch_as_b64(url: str) -> Optional[str]:
     """Fetch an image URL and return a base64 data URI, or None on failure.
 
@@ -170,6 +201,10 @@ def _storage_ref_to_b64(storage_ref: str) -> Optional[str]:
         response = minio_client.get_object(bucket, object_name)
         content = response.read()
         content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+        # This is always a real cert/client photo (never the QR code, which
+        # goes through _fetch_as_b64 instead), so lossy-shrinking it for
+        # print-size embedding is safe.
+        content, content_type = _downscale_for_pdf(content, content_type)
         data = base64.b64encode(content).decode()
         return f"data:{content_type};base64,{data}"
     except Exception:
@@ -907,7 +942,6 @@ def _render_pdf_sync(html: str) -> bytes:
             '--no-sandbox',
             '--disable-dev-shm-usage',
             '--disable-gpu',
-            '--single-process',
             '--disable-extensions',
             '--disable-background-networking',
             '--disable-default-apps',
