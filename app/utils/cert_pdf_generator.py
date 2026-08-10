@@ -137,12 +137,19 @@ def _estimate_text_lines(value: Any, chars_per_line: int, min_lines: int = 1, ma
 
 
 async def _fetch_as_b64(url: str) -> Optional[str]:
-    """Fetch an image URL and return a base64 data URI, or None on failure."""
+    """Fetch an image URL and return a base64 data URI, or None on failure.
+
+    Used for the QR code (an external qrserver.com URL, always reachable)
+    and as a last-resort fallback for signed URLs that point back at this
+    backend's own public domain — which containers generally can't reach via
+    hairpin NAT, so that path is expected to fail. Kept short (vs. the old
+    3×30s = 90s worst case) so a bulk PDF request never stalls long on it.
+    """
     if not url:
         return None
-    for attempt in range(3):
+    for attempt in range(2):
         try:
-            async with httpx.AsyncClient(timeout=30, follow_redirects=True, verify=False) as client:
+            async with httpx.AsyncClient(timeout=8, follow_redirects=True, verify=False) as client:
                 r = await client.get(url)
                 if r.status_code != 200:
                     continue
@@ -161,22 +168,34 @@ def _storage_ref_to_b64(storage_ref: str) -> Optional[str]:
     try:
         bucket, object_name = storage_ref.split("/", 1)
         response = minio_client.get_object(bucket, object_name)
-        try:
-            content = response.read()
-            content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-            data = base64.b64encode(content).decode()
-            return f"data:{content_type};base64,{data}"
-        finally:
-            response.close()
-            response.release_conn()
+        content = response.read()
+        content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+        data = base64.b64encode(content).decode()
+        return f"data:{content_type};base64,{data}"
     except Exception:
         return None
 
 
 async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
-    """Fetch all cert images concurrently and return url→base64 map."""
+    """Fetch all cert images concurrently and return url/storage-ref→base64 map.
+
+    Two source types get merged into one map here so render functions never
+    block on I/O per-cert:
+    - storage refs ('bucket/key', e.g. cert['photo_url']) — read directly
+      from R2, which is what actually works reliably (the signed HTTP URLs
+      point back at this same backend's own public domain, which containers
+      generally can't hairpin back to themselves through, so that path is
+      kept only as a last-resort fallback for callers that lack a ref).
+    - signed URLs (photo_signed_url etc., and the QR code) — fetched over
+      HTTP, still needed for the QR code (an external qrserver.com URL).
+    """
+    storage_refs = set()
     urls = set()
     for cert in certs:
+        for key in ('photo_url', 'brand_logo_url', 'rear_brand_logo_url'):
+            ref = cert.get(key)
+            if ref:
+                storage_refs.add(ref)
         for key in ('photo_signed_url', 'brand_logo_signed_url', 'rear_brand_logo_signed_url'):
             url = cert.get(key)
             if url:
@@ -185,8 +204,18 @@ async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
         if cert.get('uuid'):
             urls.add(_fallback_qr_url(cert["uuid"]))
 
-    results = await asyncio.gather(*[_fetch_as_b64(url) for url in urls])
-    return {url: b64 for url, b64 in zip(urls, results) if b64}
+    storage_results = await asyncio.gather(
+        *[asyncio.to_thread(_storage_ref_to_b64, ref) for ref in storage_refs]
+    )
+    url_results = await asyncio.gather(*[_fetch_as_b64(url) for url in urls])
+
+    img_map = {ref: b64 for ref, b64 in zip(storage_refs, storage_results) if b64}
+    # Only fall back to the (possibly-hairpinned, slower) HTTP fetch for a
+    # signed URL if nothing already resolved it via the direct storage ref.
+    for url, b64 in zip(urls, url_results):
+        if b64 and url not in img_map:
+            img_map[url] = b64
+    return img_map
 
 
 def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> str:
@@ -196,12 +225,12 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     group = schema.get('group', '')
 
     photo_url = (
-        _storage_ref_to_b64(cert.get('photo_url') or '')
+        img_map.get(cert.get('photo_url') or '')
         or img_map.get(cert.get('photo_signed_url') or '')
         or ''
     )
     brand_logo_url = (
-        _storage_ref_to_b64(cert.get('brand_logo_url') or '')
+        img_map.get(cert.get('brand_logo_url') or '')
         or img_map.get(cert.get('brand_logo_signed_url') or '')
         or ''
     )
@@ -385,8 +414,8 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 def _render_card_back(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> str:
     rear_logo_url = cert.get('rear_brand_logo_signed_url') or cert.get('brand_logo_signed_url') or ''
     rear_logo = (
-        _storage_ref_to_b64(cert.get('rear_brand_logo_url') or '')
-        or _storage_ref_to_b64(cert.get('brand_logo_url') or '')
+        img_map.get(cert.get('rear_brand_logo_url') or '')
+        or img_map.get(cert.get('brand_logo_url') or '')
         or img_map.get(rear_logo_url)
         or ''
     )
