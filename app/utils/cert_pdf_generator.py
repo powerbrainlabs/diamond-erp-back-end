@@ -942,6 +942,14 @@ def _render_pdf_sync(html: str) -> bytes:
             '--no-sandbox',
             '--disable-dev-shm-usage',
             '--disable-gpu',
+            # Multi-process Chromium (browser + separate renderer, IPC
+            # between them) timed out past 90s per batch on this droplet's
+            # single vCPU — no other core to hide the IPC/context-switch
+            # overhead on. Memory is now handled by downscaling images
+            # before embedding (the actual dominant footprint), so
+            # single-process's memory-concentration downside matters much
+            # less than its speed win here.
+            '--single-process',
             '--disable-extensions',
             '--disable-background-networking',
             '--disable-default-apps',
@@ -995,11 +1003,11 @@ async def _render_pdf_isolated(html: str) -> bytes:
         # A hard crash (e.g. Chromium segfaulting) kills the process without
         # ever putting anything on the queue — bound the wait so that fails
         # loudly instead of hanging the request forever.
-        status, payload = await asyncio.to_thread(result_queue.get, True, 90)
+        status, payload = await asyncio.to_thread(result_queue.get, True, 150)
     except queue_module.Empty:
         proc.terminate()
         raise RuntimeError(
-            f"PDF render subprocess produced no result within 90s "
+            f"PDF render subprocess produced no result within 150s "
             f"(exit code: {proc.exitcode})"
         )
     finally:
