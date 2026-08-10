@@ -898,7 +898,24 @@ def _render_pdf_sync(html: str) -> bytes:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage'])
+        # Extra flags beyond the original two trim Chromium's own baseline
+        # footprint — confirmed via dmesg that the container's cgroup OOM
+        # killer was killing the chrome-headless renderer process itself
+        # once combined memory (uvicorn + Chromium main + renderer +
+        # helper processes) crossed the container limit.
+        browser = p.chromium.launch(args=[
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--single-process',
+            '--disable-extensions',
+            '--disable-background-networking',
+            '--disable-default-apps',
+            '--disable-sync',
+            '--metrics-recording-only',
+            '--disable-breakpad',
+            '--js-flags=--max-old-space-size=128',
+        ])
         page = browser.new_page()
         page.set_content(html, wait_until='networkidle')
         page.wait_for_function("window.__cardsFitted === true", timeout=5000)
@@ -919,10 +936,12 @@ def _render_pdf_sync(html: str) -> bytes:
 # resulting PDFs keeps peak memory roughly constant no matter how many
 # certificates are requested overall (relevant since "download from
 # history" can mean anywhere from a handful up to tens of thousands).
-# Measured on the live 450M container: a batch of 30 (6 rendered PDF pages,
-# ~60-90 embedded images) alone spiked Chromium to ~410MiB — still too close
-# to the ceiling. 8 keeps each render comfortably under that.
-PDF_BATCH_SIZE = 8
+# Measured on the live 450M container via dmesg: a batch of 30 (6 rendered
+# PDF pages, ~60-90 embedded images) OOM-killed the chrome-headless renderer
+# process; a batch of 8 still did too (container-wide memory, not just this
+# process, crossed the limit). 4 plus the leaner launch flags above keeps
+# each render comfortably under it.
+PDF_BATCH_SIZE = 4
 
 
 async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
