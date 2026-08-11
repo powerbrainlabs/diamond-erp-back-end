@@ -496,6 +496,21 @@ body {
   background: white;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+  /* Card text renders as small as ~5-10px (see the fit script below), and
+     Chromium's PDF export garbles glyph positioning for small BOLD text
+     specifically with this embedded font — confirmed via pdftotext on a
+     real render ("Gross Weight" -> "G r o s s We ig h t"), reproduced
+     across Chromium 130-151 and independent of TTF/WOFF2/single-process/
+     font-weight-vs-separate-family, so it's not a version or config fix.
+     `zoom` (unlike `transform`) participates in normal layout, so the
+     existing fit script's getBoundingClientRect()/scrollHeight-based
+     measurements keep working unchanged — render everything 4x bigger
+     (well clear of the bug, confirmed clean at 16px+) and shrink the
+     whole page back down via page.pdf's scale option in
+     _render_pdf_sync, so the printed output is pixel-identical to the
+     original design, just never actually shaped at a buggy small size.
+  */
+  zoom: 4;
 }
 
 .page {
@@ -985,6 +1000,9 @@ def _render_pdf_sync(html: str) -> bytes:
             format='A4',
             margin={'top': '0', 'right': '0', 'bottom': '0', 'left': '0'},
             print_background=True,
+            # Compensates the CSS `zoom: 4` on body (see its comment) —
+            # net effect is 1x, output is the same physical size as before.
+            scale=0.25,
         )
         browser.close()
     return pdf_bytes
