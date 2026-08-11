@@ -869,8 +869,38 @@ FIT_SCRIPT = """
     }
   }
 
+  // .label has a fixed 93px width and white-space: nowrap (see CSS) — the
+  // main fitCard loop only sizes fonts to fit *vertically* (row count vs.
+  // available height), nothing checks whether an individual label's own
+  // text fits *horizontally* in that box. Most labels are short static
+  // strings (Cut, Color, SG...) so this went unnoticed, but a long
+  // dynamically-built one (e.g. "RUBY & NATURAL EMERALD Weight", from the
+  // gemstone-name substitution above) overflows straight into the value
+  // column with no fallback. Same technique fitCommentValues already uses
+  // for the same class of problem on the value side.
+  function fitLabels() {
+    document.querySelectorAll('.label').forEach(function(el) {
+      let fs = parseFloat(window.getComputedStyle(el).fontSize);
+      const minFs = fs * 0.55;
+      for (let i = 0; i < 10; i++) {
+        if (el.scrollWidth <= el.clientWidth + ZOOM) break;
+        fs = Math.max(minFs, fs * 0.94);
+        el.style.fontSize = fs.toFixed(2) + 'px';
+      }
+      // Even at the shrink floor, a genuinely long dynamically-built label
+      // (e.g. two long gemstone names combined) can still be too wide for
+      // 93px without becoming illegibly small. Wrapping to 2 lines keeps
+      // the fixed label width (so every row's colon/value still lines up)
+      // instead of overlapping into the value column.
+      if (el.scrollWidth > el.clientWidth + ZOOM) {
+        el.style.whiteSpace = 'normal';
+      }
+    });
+  }
+
   function run() {
     document.querySelectorAll('.cert-card:not(.back-card)').forEach(fitCard);
+    fitLabels();
     alignPhotoToCertNo();
     window.__cardsFitted = true;
   }
