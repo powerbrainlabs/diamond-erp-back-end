@@ -496,21 +496,15 @@ body {
   background: white;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
-  /* Card text renders as small as ~5-10px (see the fit script below), and
+  /* Card text renders as small as ~5-10px (see the fit script below), where
      Chromium's PDF export garbles glyph positioning for small BOLD text
-     specifically with this embedded font — confirmed via pdftotext on a
-     real render ("Gross Weight" -> "G r o s s We ig h t"), reproduced
-     across Chromium 130-151 and independent of TTF/WOFF2/single-process/
-     font-weight-vs-separate-family, so it's not a version or config fix.
-     `zoom` (unlike `transform`) participates in normal layout, so the
-     existing fit script's getBoundingClientRect()/scrollHeight-based
-     measurements keep working unchanged — render everything 4x bigger
-     (well clear of the bug, confirmed clean at 16px+) and shrink the
-     whole page back down via page.pdf's scale option in
-     _render_pdf_sync, so the printed output is pixel-identical to the
-     original design, just never actually shaped at a buggy small size.
-  */
-  zoom: 4;
+     ("Gross Weight" -> "G r o s s We ig h t"). The cause is Chromium's
+     default font hinting (--font-render-hinting=full), which quantizes
+     glyph advances to whole pixels; at these sizes the rounding error is
+     large enough that each glyph gets its own position operator. It is
+     fixed at the environment level — the Dockerfile wraps the headless
+     Chromium binary to always pass --font-render-hinting=none — so no
+     layout trickery is needed here. */
 }
 
 .page {
@@ -796,19 +790,6 @@ FIT_SCRIPT = """
 (() => {
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-  // Matches the CSS `zoom: 4` on body (see its comment). getComputedStyle()
-  // still reports the authored, unzoomed font-size — confirmed via a direct
-  // test (a `font-size: 8px` element under zoom:4 reports computed
-  // fontSize "8px", not "32px") — but getBoundingClientRect()/scrollHeight
-  // report the zoomed (4x) box geometry. minFont/maxFont below compare
-  // against the unzoomed fontSize so need no change, but reservedGap and
-  // the "how much extra room is there" check further down compare directly
-  // against rect/scrollHeight measurements, so those raw pixel constants
-  // need multiplying by this factor too — otherwise they're ~4x too small,
-  // which under-reserves space and lets content overflow into the footer
-  // (reproduced: "Comments" row and footer clipped off on denser cards).
-  const ZOOM = 4;
-
   function fitCard(card) {
     const fields = card.querySelector('.fields-area');
     const footer = card.querySelector('.card-footer');
@@ -825,7 +806,7 @@ FIT_SCRIPT = """
     const minLine = Math.max(6.8, lineHeight * 0.78);
     const maxLine = Math.min(14.8, lineHeight * 1.55);
 
-    const reservedGap = (rowCount >= 10 ? 3.5 : rowCount <= 4 ? 1.5 : 2) * ZOOM;
+    const reservedGap = rowCount >= 10 ? 3.5 : rowCount <= 4 ? 1.5 : 2;
 
     for (let i = 0; i < 12; i += 1) {
       const fieldsRect = fields.getBoundingClientRect();
@@ -862,7 +843,7 @@ FIT_SCRIPT = """
       return;
     }
 
-    if (rowCount <= 10 && finalAvailable > finalContent + (4 * ZOOM)) {
+    if (rowCount <= 10 && finalAvailable > finalContent + 4) {
       const fillRatio = clamp(finalAvailable / finalContent, 1, rowCount <= 4 ? 1.1 : rowCount <= 8 ? 1.06 : 1.04);
       fields.style.fontSize = `${clamp(fontSize * fillRatio, minFont, maxFont).toFixed(2)}px`;
       fields.style.lineHeight = `${clamp(lineHeight * fillRatio, minLine, maxLine).toFixed(2)}px`;
@@ -883,7 +864,7 @@ FIT_SCRIPT = """
       let fs = parseFloat(window.getComputedStyle(el).fontSize);
       const minFs = fs * 0.55;
       for (let i = 0; i < 10; i++) {
-        if (el.scrollWidth <= el.clientWidth + ZOOM) break;
+        if (el.scrollWidth <= el.clientWidth + 1) break;
         fs = Math.max(minFs, fs * 0.94);
         el.style.fontSize = fs.toFixed(2) + 'px';
       }
@@ -892,7 +873,7 @@ FIT_SCRIPT = """
       // 93px without becoming illegibly small. Wrapping to 2 lines keeps
       // the fixed label width (so every row's colon/value still lines up)
       // instead of overlapping into the value column.
-      if (el.scrollWidth > el.clientWidth + ZOOM) {
+      if (el.scrollWidth > el.clientWidth + 1) {
         el.style.whiteSpace = 'normal';
       }
     });
@@ -936,12 +917,7 @@ FIT_SCRIPT = """
       if (!certNoRow) return;
       const cardRect = card.getBoundingClientRect();
       const certNoRect = certNoRow.getBoundingClientRect();
-      // getBoundingClientRect() is in the zoomed (4x) space, but a value
-      // assigned to .style.top is an authored CSS length that itself gets
-      // multiplied by zoom again at render time — divide back out or the
-      // frame ends up 4x further down than intended (same class of bug as
-      // reservedGap above, just for position instead of size).
-      const newTop = (certNoRect.top - cardRect.top) / ZOOM;
+      const newTop = certNoRect.top - cardRect.top;
       frame.style.top = newTop + 'px';
     });
   }
@@ -953,7 +929,7 @@ FIT_SCRIPT = """
       let fs = parseFloat(window.getComputedStyle(el).fontSize);
       const minFs = fs * 0.72;
       for (let i = 0; i < 10; i++) {
-        if (el.scrollWidth <= el.clientWidth + ZOOM) break;
+        if (el.scrollWidth <= el.clientWidth + 1) break;
         fs = Math.max(minFs, fs * 0.94);
         el.style.fontSize = fs.toFixed(2) + 'px';
       }
@@ -1048,9 +1024,6 @@ def _render_pdf_sync(html: str) -> bytes:
             format='A4',
             margin={'top': '0', 'right': '0', 'bottom': '0', 'left': '0'},
             print_background=True,
-            # Compensates the CSS `zoom: 4` on body (see its comment) —
-            # net effect is 1x, output is the same physical size as before.
-            scale=0.25,
         )
         browser.close()
     return pdf_bytes
