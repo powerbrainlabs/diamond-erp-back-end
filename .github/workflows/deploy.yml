@@ -46,3 +46,13 @@ jobs:
             # Wait and verify it's running
             sleep 5
             sudo systemctl is-active diamond-erp
+
+            # TEMP DIAGNOSTIC — get the exact RPM packages Chromium's
+            # shared library deps resolve to on this working install, so
+            # production's Amazon-Linux-based image can install the same
+            # ones instead of guessing. Remove after checking the log.
+            echo "=== LIBS DIAGNOSTIC ==="
+            CHROME_BIN=$(find /home/ec2-user/.cache/ms-playwright -iname "headless_shell" -o -iname "chrome" 2>/dev/null | head -1)
+            echo "chrome binary: $CHROME_BIN"
+            ldd "$CHROME_BIN" 2>&1 | awk '{print $3}' | grep '^/' | sort -u | xargs -n1 rpm -qf 2>&1 | sort -u
+            echo "=== END LIBS DIAGNOSTIC ==="
