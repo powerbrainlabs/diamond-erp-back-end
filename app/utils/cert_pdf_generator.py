@@ -22,12 +22,22 @@ def _b64_img(path: str) -> str:
     return f"data:{mime};base64,{data}"
 
 def _build_font_face_css() -> str:
+    # Embed as data URIs rather than referencing file:// paths — confirmed
+    # via a direct test (document.fonts.check() after render) that Poppins
+    # silently fails to load via file:// regardless of Chromium launch
+    # flags, most likely newer Chromium restricting file:// sub-resource
+    # loads from a page not itself navigated to a file:// origin (this page
+    # is set via page.set_content(), not a file:// navigation). Data URIs
+    # sidestep that origin restriction entirely, and this file already uses
+    # the same approach for the header/background images below.
     fonts_dir = ASSETS_DIR / "fonts"
     css = ""
     for weight, filename in [(400, "Poppins-Regular.ttf"), (500, "Poppins-Medium.ttf"), (600, "Poppins-SemiBold.ttf"), (700, "Poppins-Bold.ttf")]:
         font_path = fonts_dir / filename
         if font_path.exists():
-            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('file://{font_path}') format('truetype');}}\n"
+            with open(font_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('data:font/truetype;base64,{b64}') format('truetype');}}\n"
     return css
 
 
