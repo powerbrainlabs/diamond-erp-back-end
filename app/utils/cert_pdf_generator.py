@@ -835,11 +835,26 @@ FIT_SCRIPT = """
     const finalContent = fields.scrollHeight;
 
     if (finalContent > finalAvailable) {
-      const shrinkRatio = clamp(finalAvailable / finalContent, 0.88, 0.98);
-      fontSize = clamp(fontSize * shrinkRatio, minFont, maxFont);
-      lineHeight = clamp(lineHeight * shrinkRatio, minLine, maxLine);
-      fields.style.fontSize = `${fontSize.toFixed(2)}px`;
-      fields.style.lineHeight = `${lineHeight.toFixed(2)}px`;
+      // Shrink until the rows actually fit, re-measuring each pass. A single
+      // pass is not enough: shrinking the font re-wraps the longer values, so
+      // the row count (and with it scrollHeight) changes underneath the very
+      // ratio used to pick the new size. Whatever still overflows here gets
+      // clipped by the card edge, and a half-drawn row extracts from the PDF
+      // with its glyphs dropped ("Fluorescence" -> "Fl", "Faint" -> "F i t"),
+      // so it is worth spending a few extra iterations to land inside.
+      for (let i = 0; i < 12; i += 1) {
+        const available = footer.getBoundingClientRect().top
+          - fields.getBoundingClientRect().top - reservedGap;
+        if (fields.scrollHeight <= available) break;
+        const nextFont = clamp(fontSize * 0.97, minFont, maxFont);
+        const nextLine = clamp(lineHeight * 0.97, minLine, maxLine);
+        // Both at their floor — no further shrink is possible.
+        if (Math.abs(nextFont - fontSize) < 0.01 && Math.abs(nextLine - lineHeight) < 0.01) break;
+        fontSize = nextFont;
+        lineHeight = nextLine;
+        fields.style.fontSize = `${fontSize.toFixed(2)}px`;
+        fields.style.lineHeight = `${lineHeight.toFixed(2)}px`;
+      }
       return;
     }
 
