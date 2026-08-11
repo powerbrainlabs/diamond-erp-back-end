@@ -46,12 +46,3 @@ jobs:
             # Wait and verify it's running
             sleep 5
             sudo systemctl is-active diamond-erp
-
-            # TEMP DIAGNOSTIC — checking whether staging's real rendering
-            # pipeline has the same small-bold-text corruption bug found
-            # on production, or whether it's genuinely environment-
-            # specific. Remove after checking the Action log.
-            echo "=== FONT DIAGNOSTIC ==="
-            python3.11 -c "from playwright.sync_api import sync_playwright; html = '<html><head><style>body{font-family:Poppins,sans-serif;font-size:8px}.b{font-weight:700}</style></head><body><div class=\"b\">Gross Weight Natural Diamond Conclusion Certificate</div><div>Certificate No Shape Color Clarity</div></body></html>'; p = sync_playwright().start(); b = p.chromium.launch(); pg = b.new_page(); pg.set_content(html, wait_until='networkidle'); pg.wait_for_timeout(500); pdf = pg.pdf(format='A4', print_background=True); open('/tmp/diag.pdf','wb').write(pdf); b.close(); p.stop()" 2>&1
-            base64 -w0 /tmp/diag.pdf 2>&1 || base64 /tmp/diag.pdf 2>&1
-            echo "=== END FONT DIAGNOSTIC ==="
