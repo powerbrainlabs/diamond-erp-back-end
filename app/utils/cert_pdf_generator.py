@@ -30,14 +30,23 @@ def _build_font_face_css() -> str:
     # is set via page.set_content(), not a file:// navigation). Data URIs
     # sidestep that origin restriction entirely, and this file already uses
     # the same approach for the header/background images below.
+    #
+    # WOFF2, not TTF: switching to data-URI TTF fixed loading but introduced
+    # a *worse* bug — pdftotext on the generated PDF showed bold text
+    # scrambled with stray spaces mid-word ("Gross Weight" -> "G r o s s
+    # We ig h t"), regular weight mostly unaffected. Chromium's PDF export
+    # mis-subsets/positions glyphs for the base64 TTF specifically (own
+    # test: identical bold text rendered correctly once switched to the
+    # bundled woff2 files instead — same content, only the embedded format
+    # differed).
     fonts_dir = ASSETS_DIR / "fonts"
     css = ""
-    for weight, filename in [(400, "Poppins-Regular.ttf"), (500, "Poppins-Medium.ttf"), (600, "Poppins-SemiBold.ttf"), (700, "Poppins-Bold.ttf")]:
+    for weight, filename in [(400, "Poppins-400.woff2"), (500, "Poppins-500.woff2"), (600, "Poppins-600.woff2"), (700, "Poppins-700.woff2")]:
         font_path = fonts_dir / filename
         if font_path.exists():
             with open(font_path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode()
-            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('data:font/truetype;base64,{b64}') format('truetype');}}\n"
+            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('data:font/woff2;base64,{b64}') format('woff2');}}\n"
     return css
 
 
@@ -834,7 +843,7 @@ FIT_SCRIPT = """
 
   function run() {
     document.querySelectorAll('.cert-card:not(.back-card)').forEach(fitCard);
-    alignPhotoToСertNo();
+    alignPhotoToCertNo();
     window.__cardsFitted = true;
   }
 
@@ -852,7 +861,7 @@ FIT_SCRIPT = """
     });
   }
 
-  function alignPhotoToСertNo() {
+  function alignPhotoToCertNo() {
     document.querySelectorAll('.cert-card:not(.back-card)').forEach(function(card) {
       const frame = card.querySelector('.cert-photo-frame');
       const photo = frame && frame.querySelector('.cert-photo');
