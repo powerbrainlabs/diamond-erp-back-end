@@ -22,31 +22,12 @@ def _b64_img(path: str) -> str:
     return f"data:{mime};base64,{data}"
 
 def _build_font_face_css() -> str:
-    # Embed as data URIs rather than referencing file:// paths — confirmed
-    # via a direct test (document.fonts.check() after render) that Poppins
-    # silently fails to load via file:// regardless of Chromium launch
-    # flags, most likely newer Chromium restricting file:// sub-resource
-    # loads from a page not itself navigated to a file:// origin (this page
-    # is set via page.set_content(), not a file:// navigation). Data URIs
-    # sidestep that origin restriction entirely, and this file already uses
-    # the same approach for the header/background images below.
-    #
-    # WOFF2, not TTF: switching to data-URI TTF fixed loading but introduced
-    # a *worse* bug — pdftotext on the generated PDF showed bold text
-    # scrambled with stray spaces mid-word ("Gross Weight" -> "G r o s s
-    # We ig h t"), regular weight mostly unaffected. Chromium's PDF export
-    # mis-subsets/positions glyphs for the base64 TTF specifically (own
-    # test: identical bold text rendered correctly once switched to the
-    # bundled woff2 files instead — same content, only the embedded format
-    # differed).
     fonts_dir = ASSETS_DIR / "fonts"
     css = ""
-    for weight, filename in [(400, "Poppins-400.woff2"), (500, "Poppins-500.woff2"), (600, "Poppins-600.woff2"), (700, "Poppins-700.woff2")]:
+    for weight, filename in [(400, "Poppins-Regular.ttf"), (500, "Poppins-Medium.ttf"), (600, "Poppins-SemiBold.ttf"), (700, "Poppins-Bold.ttf")]:
         font_path = fonts_dir / filename
         if font_path.exists():
-            with open(font_path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('data:font/woff2;base64,{b64}') format('woff2');}}\n"
+            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('file://{font_path}') format('truetype');}}\n"
     return css
 
 
@@ -155,51 +136,13 @@ def _estimate_text_lines(value: Any, chars_per_line: int, min_lines: int = 1, ma
     return max(min_lines, min(line_count, max_lines))
 
 
-def _downscale_for_pdf(content: bytes, content_type: str) -> tuple[bytes, str]:
-    """Shrink an image before it gets base64-embedded and rasterized by
-    Chromium for print. Certificate photos come straight from camera/phone
-    uploads (multi-MB, thousands of pixels wide) — full resolution is
-    pointless for a card-sized print photo, and decoding+rasterizing that
-    many full-size images at once is exactly what was pushing a single
-    8-cert batch to ~500MiB (confirmed via docker stats). Falls back to the
-    original bytes untouched on any failure (e.g. SVGs, corrupt data).
-    """
-    try:
-        from io import BytesIO
-        from PIL import Image
-
-        img = Image.open(BytesIO(content))
-        img.load()
-        max_dim = 900
-        if img.width > max_dim or img.height > max_dim:
-            img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
-        if img.mode in ("RGBA", "LA", "P"):
-            background = Image.new("RGB", img.size, (255, 255, 255))
-            background.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
-            img = background
-        elif img.mode != "RGB":
-            img = img.convert("RGB")
-        out = BytesIO()
-        img.save(out, format="JPEG", quality=78, optimize=True)
-        return out.getvalue(), "image/jpeg"
-    except Exception:
-        return content, content_type
-
-
 async def _fetch_as_b64(url: str) -> Optional[str]:
-    """Fetch an image URL and return a base64 data URI, or None on failure.
-
-    Used for the QR code (an external qrserver.com URL, always reachable)
-    and as a last-resort fallback for signed URLs that point back at this
-    backend's own public domain — which containers generally can't reach via
-    hairpin NAT, so that path is expected to fail. Kept short (vs. the old
-    3×30s = 90s worst case) so a bulk PDF request never stalls long on it.
-    """
+    """Fetch an image URL and return a base64 data URI, or None on failure."""
     if not url:
         return None
-    for attempt in range(2):
+    for attempt in range(3):
         try:
-            async with httpx.AsyncClient(timeout=8, follow_redirects=True, verify=False) as client:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True, verify=False) as client:
                 r = await client.get(url)
                 if r.status_code != 200:
                     continue
@@ -218,38 +161,22 @@ def _storage_ref_to_b64(storage_ref: str) -> Optional[str]:
     try:
         bucket, object_name = storage_ref.split("/", 1)
         response = minio_client.get_object(bucket, object_name)
-        content = response.read()
-        content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-        # This is always a real cert/client photo (never the QR code, which
-        # goes through _fetch_as_b64 instead), so lossy-shrinking it for
-        # print-size embedding is safe.
-        content, content_type = _downscale_for_pdf(content, content_type)
-        data = base64.b64encode(content).decode()
-        return f"data:{content_type};base64,{data}"
+        try:
+            content = response.read()
+            content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+            data = base64.b64encode(content).decode()
+            return f"data:{content_type};base64,{data}"
+        finally:
+            response.close()
+            response.release_conn()
     except Exception:
         return None
 
 
 async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
-    """Fetch all cert images concurrently and return url/storage-ref→base64 map.
-
-    Two source types get merged into one map here so render functions never
-    block on I/O per-cert:
-    - storage refs ('bucket/key', e.g. cert['photo_url']) — read directly
-      from R2, which is what actually works reliably (the signed HTTP URLs
-      point back at this same backend's own public domain, which containers
-      generally can't hairpin back to themselves through, so that path is
-      kept only as a last-resort fallback for callers that lack a ref).
-    - signed URLs (photo_signed_url etc., and the QR code) — fetched over
-      HTTP, still needed for the QR code (an external qrserver.com URL).
-    """
-    storage_refs = set()
+    """Fetch all cert images concurrently and return url→base64 map."""
     urls = set()
     for cert in certs:
-        for key in ('photo_url', 'brand_logo_url', 'rear_brand_logo_url'):
-            ref = cert.get(key)
-            if ref:
-                storage_refs.add(ref)
         for key in ('photo_signed_url', 'brand_logo_signed_url', 'rear_brand_logo_signed_url'):
             url = cert.get(key)
             if url:
@@ -258,18 +185,8 @@ async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
         if cert.get('uuid'):
             urls.add(_fallback_qr_url(cert["uuid"]))
 
-    storage_results = await asyncio.gather(
-        *[asyncio.to_thread(_storage_ref_to_b64, ref) for ref in storage_refs]
-    )
-    url_results = await asyncio.gather(*[_fetch_as_b64(url) for url in urls])
-
-    img_map = {ref: b64 for ref, b64 in zip(storage_refs, storage_results) if b64}
-    # Only fall back to the (possibly-hairpinned, slower) HTTP fetch for a
-    # signed URL if nothing already resolved it via the direct storage ref.
-    for url, b64 in zip(urls, url_results):
-        if b64 and url not in img_map:
-            img_map[url] = b64
-    return img_map
+    results = await asyncio.gather(*[_fetch_as_b64(url) for url in urls])
+    return {url: b64 for url, b64 in zip(urls, results) if b64}
 
 
 def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> str:
@@ -279,12 +196,12 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     group = schema.get('group', '')
 
     photo_url = (
-        img_map.get(cert.get('photo_url') or '')
+        _storage_ref_to_b64(cert.get('photo_url') or '')
         or img_map.get(cert.get('photo_signed_url') or '')
         or ''
     )
     brand_logo_url = (
-        img_map.get(cert.get('brand_logo_url') or '')
+        _storage_ref_to_b64(cert.get('brand_logo_url') or '')
         or img_map.get(cert.get('brand_logo_signed_url') or '')
         or ''
     )
@@ -468,8 +385,8 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 def _render_card_back(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> str:
     rear_logo_url = cert.get('rear_brand_logo_signed_url') or cert.get('brand_logo_signed_url') or ''
     rear_logo = (
-        img_map.get(cert.get('rear_brand_logo_url') or '')
-        or img_map.get(cert.get('brand_logo_url') or '')
+        _storage_ref_to_b64(cert.get('rear_brand_logo_url') or '')
+        or _storage_ref_to_b64(cert.get('brand_logo_url') or '')
         or img_map.get(rear_logo_url)
         or ''
     )
@@ -496,21 +413,6 @@ body {
   background: white;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
-  /* Card text renders as small as ~5-10px (see the fit script below), and
-     Chromium's PDF export garbles glyph positioning for small BOLD text
-     specifically with this embedded font — confirmed via pdftotext on a
-     real render ("Gross Weight" -> "G r o s s We ig h t"), reproduced
-     across Chromium 130-151 and independent of TTF/WOFF2/single-process/
-     font-weight-vs-separate-family, so it's not a version or config fix.
-     `zoom` (unlike `transform`) participates in normal layout, so the
-     existing fit script's getBoundingClientRect()/scrollHeight-based
-     measurements keep working unchanged — render everything 4x bigger
-     (well clear of the bug, confirmed clean at 16px+) and shrink the
-     whole page back down via page.pdf's scale option in
-     _render_pdf_sync, so the printed output is pixel-identical to the
-     original design, just never actually shaped at a buggy small size.
-  */
-  zoom: 4;
 }
 
 .page {
@@ -858,7 +760,7 @@ FIT_SCRIPT = """
 
   function run() {
     document.querySelectorAll('.cert-card:not(.back-card)').forEach(fitCard);
-    alignPhotoToCertNo();
+    alignPhotoToСertNo();
     window.__cardsFitted = true;
   }
 
@@ -876,7 +778,7 @@ FIT_SCRIPT = """
     });
   }
 
-  function alignPhotoToCertNo() {
+  function alignPhotoToСertNo() {
     document.querySelectorAll('.cert-card:not(.back-card)').forEach(function(card) {
       const frame = card.querySelector('.cert-photo-frame');
       const photo = frame && frame.querySelector('.cert-photo');
@@ -967,31 +869,7 @@ def _render_pdf_sync(html: str) -> bytes:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        # Extra flags beyond the original two trim Chromium's own baseline
-        # footprint — confirmed via dmesg that the container's cgroup OOM
-        # killer was killing the chrome-headless renderer process itself
-        # once combined memory (uvicorn + Chromium main + renderer +
-        # helper processes) crossed the container limit.
-        browser = p.chromium.launch(args=[
-            '--no-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            # Multi-process Chromium (browser + separate renderer, IPC
-            # between them) timed out past 90s per batch on this droplet's
-            # single vCPU — no other core to hide the IPC/context-switch
-            # overhead on. Memory is now handled by downscaling images
-            # before embedding (the actual dominant footprint), so
-            # single-process's memory-concentration downside matters much
-            # less than its speed win here.
-            '--single-process',
-            '--disable-extensions',
-            '--disable-background-networking',
-            '--disable-default-apps',
-            '--disable-sync',
-            '--metrics-recording-only',
-            '--disable-breakpad',
-            '--js-flags=--max-old-space-size=128',
-        ])
+        browser = p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage'])
         page = browser.new_page()
         page.set_content(html, wait_until='networkidle')
         page.wait_for_function("window.__cardsFitted === true", timeout=5000)
@@ -1000,92 +878,15 @@ def _render_pdf_sync(html: str) -> bytes:
             format='A4',
             margin={'top': '0', 'right': '0', 'bottom': '0', 'left': '0'},
             print_background=True,
-            # Compensates the CSS `zoom: 4` on body (see its comment) —
-            # net effect is 1x, output is the same physical size as before.
-            scale=0.25,
         )
         browser.close()
     return pdf_bytes
 
 
-def _render_pdf_worker(html: str, queue) -> None:
-    """Entry point for the isolated subprocess — see _render_pdf_isolated."""
-    try:
-        queue.put(("ok", _render_pdf_sync(html)))
-    except Exception as e:
-        queue.put(("error", f"{type(e).__name__}: {e}"))
-
-
-async def _render_pdf_isolated(html: str) -> bytes:
-    """Render one batch's PDF in a brand-new OS process.
-
-    Measured via docker stats across repeated in-process Chromium launches
-    (same live Python process, one after another via asyncio.to_thread):
-    memory plateaus well above single-request baseline between batches
-    (~242MiB vs ~97MiB) and climbs further each batch until the container's
-    cgroup OOM-killer takes out the renderer — Playwright/Chromium isn't
-    fully releasing OS-level resources back across repeated launches in the
-    same process. A fresh subprocess per batch sidesteps that entirely:
-    Linux reclaims 100% of a process's memory when it exits, regardless of
-    what leaked inside it.
-    """
-    import multiprocessing as mp
-    import queue as queue_module
-
-    ctx = mp.get_context("spawn")
-    result_queue = ctx.Queue()
-    proc = ctx.Process(target=_render_pdf_worker, args=(html, result_queue))
-    proc.start()
-    try:
-        # A hard crash (e.g. Chromium segfaulting) kills the process without
-        # ever putting anything on the queue — bound the wait so that fails
-        # loudly instead of hanging the request forever.
-        status, payload = await asyncio.to_thread(result_queue.get, True, 150)
-    except queue_module.Empty:
-        proc.terminate()
-        raise RuntimeError(
-            f"PDF render subprocess produced no result within 150s "
-            f"(exit code: {proc.exitcode})"
-        )
-    finally:
-        await asyncio.to_thread(proc.join, 5)
-    if status == "error":
-        raise RuntimeError(f"PDF render subprocess failed: {payload}")
-    return payload
-
-
-# A single render holds every cert's base64-encoded images plus the full
-# HTML string in memory at once, on top of Chromium's own footprint — fine
-# for a handful of certs, but a 100-cert request OOM-killed the backend
-# (300M container limit). Rendering in bounded batches (each isolated in
-# its own subprocess, see _render_pdf_isolated) and merging the resulting
-# PDFs keeps peak memory roughly constant no matter how many certificates
-# are requested overall (relevant since "download from history" can mean
-# anywhere from a handful up to tens of thousands).
-PDF_BATCH_SIZE = 8
-
-
 async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
-    if len(certs) <= PDF_BATCH_SIZE:
-        img_map = await _prefetch_images(certs)
-        html = _build_html(certs, img_map)
-        return await _render_pdf_isolated(html)
-
-    import io
-    from pypdf import PdfWriter, PdfReader
-
-    writer = PdfWriter()
-    for i in range(0, len(certs), PDF_BATCH_SIZE):
-        batch = certs[i:i + PDF_BATCH_SIZE]
-        img_map = await _prefetch_images(batch)
-        html = _build_html(batch, img_map)
-        pdf_bytes = await _render_pdf_isolated(html)
-        for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
-            writer.add_page(page)
-
-    output = io.BytesIO()
-    writer.write(output)
-    return output.getvalue()
+    img_map = await _prefetch_images(certs)
+    html = _build_html(certs, img_map)
+    return await asyncio.to_thread(_render_pdf_sync, html)
 
 
 def generate_certificates_pdf(certs: List[Dict[str, Any]]) -> bytes:
