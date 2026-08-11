@@ -46,13 +46,3 @@ jobs:
             # Wait and verify it's running
             sleep 5
             sudo systemctl is-active diamond-erp
-
-            # TEMP DIAGNOSTIC — investigating a Chromium PDF-export font
-            # rendering difference between staging and production. Remove
-            # after checking the Action log.
-            echo "=== DIAGNOSTIC ==="
-            python3.11 -m pip show playwright 2>&1 | head -3
-            python3.11 -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); print('CHROMIUM VERSION:', b.version); b.close(); p.stop()" 2>&1
-            cat /etc/os-release 2>&1 | head -5
-            fc-list | grep -i poppins
-            echo "=== END DIAGNOSTIC ==="
