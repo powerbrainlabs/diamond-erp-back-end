@@ -796,6 +796,19 @@ FIT_SCRIPT = """
 (() => {
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+  // Matches the CSS `zoom: 4` on body (see its comment). getComputedStyle()
+  // still reports the authored, unzoomed font-size — confirmed via a direct
+  // test (a `font-size: 8px` element under zoom:4 reports computed
+  // fontSize "8px", not "32px") — but getBoundingClientRect()/scrollHeight
+  // report the zoomed (4x) box geometry. minFont/maxFont below compare
+  // against the unzoomed fontSize so need no change, but reservedGap and
+  // the "how much extra room is there" check further down compare directly
+  // against rect/scrollHeight measurements, so those raw pixel constants
+  // need multiplying by this factor too — otherwise they're ~4x too small,
+  // which under-reserves space and lets content overflow into the footer
+  // (reproduced: "Comments" row and footer clipped off on denser cards).
+  const ZOOM = 4;
+
   function fitCard(card) {
     const fields = card.querySelector('.fields-area');
     const footer = card.querySelector('.card-footer');
@@ -812,7 +825,7 @@ FIT_SCRIPT = """
     const minLine = Math.max(6.8, lineHeight * 0.78);
     const maxLine = Math.min(14.8, lineHeight * 1.55);
 
-    const reservedGap = rowCount >= 10 ? 3.5 : rowCount <= 4 ? 1.5 : 2;
+    const reservedGap = (rowCount >= 10 ? 3.5 : rowCount <= 4 ? 1.5 : 2) * ZOOM;
 
     for (let i = 0; i < 12; i += 1) {
       const fieldsRect = fields.getBoundingClientRect();
@@ -849,7 +862,7 @@ FIT_SCRIPT = """
       return;
     }
 
-    if (rowCount <= 10 && finalAvailable > finalContent + 4) {
+    if (rowCount <= 10 && finalAvailable > finalContent + (4 * ZOOM)) {
       const fillRatio = clamp(finalAvailable / finalContent, 1, rowCount <= 4 ? 1.1 : rowCount <= 8 ? 1.06 : 1.04);
       fields.style.fontSize = `${clamp(fontSize * fillRatio, minFont, maxFont).toFixed(2)}px`;
       fields.style.lineHeight = `${clamp(lineHeight * fillRatio, minLine, maxLine).toFixed(2)}px`;
@@ -893,7 +906,12 @@ FIT_SCRIPT = """
       if (!certNoRow) return;
       const cardRect = card.getBoundingClientRect();
       const certNoRect = certNoRow.getBoundingClientRect();
-      const newTop = certNoRect.top - cardRect.top;
+      // getBoundingClientRect() is in the zoomed (4x) space, but a value
+      // assigned to .style.top is an authored CSS length that itself gets
+      // multiplied by zoom again at render time — divide back out or the
+      // frame ends up 4x further down than intended (same class of bug as
+      // reservedGap above, just for position instead of size).
+      const newTop = (certNoRect.top - cardRect.top) / ZOOM;
       frame.style.top = newTop + 'px';
     });
   }
@@ -905,7 +923,7 @@ FIT_SCRIPT = """
       let fs = parseFloat(window.getComputedStyle(el).fontSize);
       const minFs = fs * 0.72;
       for (let i = 0; i < 10; i++) {
-        if (el.scrollWidth <= el.clientWidth + 1) break;
+        if (el.scrollWidth <= el.clientWidth + ZOOM) break;
         fs = Math.max(minFs, fs * 0.94);
         el.style.fontSize = fs.toFixed(2) + 'px';
       }
