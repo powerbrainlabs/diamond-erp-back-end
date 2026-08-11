@@ -46,3 +46,13 @@ jobs:
             # Wait and verify it's running
             sleep 5
             sudo systemctl is-active diamond-erp
+
+            echo "===CPU==="
+            grep -m1 "model name" /proc/cpuinfo
+            grep -m1 flags /proc/cpuinfo | tr ' ' '\n' | grep -E '^(avx|sse|f16c|fma)' | sort | tr '\n' ' '
+            echo
+            echo "===RUNAS==="
+            ps aux | grep -i "python3.11 -m uvicorn" | grep -v grep
+            echo "===DOCKERCHECK==="
+            cat /proc/1/cgroup 2>/dev/null | head -3
+            echo "===END-DIAG==="
