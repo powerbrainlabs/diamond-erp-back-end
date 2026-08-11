@@ -22,22 +22,31 @@ def _b64_img(path: str) -> str:
     return f"data:{mime};base64,{data}"
 
 def _build_font_face_css() -> str:
-    # NOTE: file:// works fine for a single/small certificate render, but
-    # the data-URI approach tried instead (to fix a rarer file:// loading
-    # edge case) introduced a worse bug — Chromium's PDF export scrambles
-    # glyph positioning for small BOLD text with a base64-embedded custom
-    # font (confirmed via pdftotext: "Gross Weight" -> "G r o s s We ig h
-    # t"), and no combination of format/flags avoided it cleanly enough to
-    # risk here. Reverted to file:// (original, staging-matching behavior)
-    # rather than carry that risk on this shared file — if Poppins fails to
-    # load in some environment, cards fall back to the CSS's system
-    # sans-serif, a cosmetic difference only, not corrupted/unreadable text.
+    # Embed as data URIs rather than referencing file:// paths — confirmed
+    # via a direct test (document.fonts.check() after render) that Poppins
+    # silently fails to load via file:// regardless of Chromium launch
+    # flags, most likely newer Chromium restricting file:// sub-resource
+    # loads from a page not itself navigated to a file:// origin (this page
+    # is set via page.set_content(), not a file:// navigation). Data URIs
+    # sidestep that origin restriction entirely, and this file already uses
+    # the same approach for the header/background images below.
+    #
+    # WOFF2, not TTF: switching to data-URI TTF fixed loading but introduced
+    # a *worse* bug — pdftotext on the generated PDF showed bold text
+    # scrambled with stray spaces mid-word ("Gross Weight" -> "G r o s s
+    # We ig h t"), regular weight mostly unaffected. Chromium's PDF export
+    # mis-subsets/positions glyphs for the base64 TTF specifically (own
+    # test: identical bold text rendered correctly once switched to the
+    # bundled woff2 files instead — same content, only the embedded format
+    # differed).
     fonts_dir = ASSETS_DIR / "fonts"
     css = ""
-    for weight, filename in [(400, "Poppins-Regular.ttf"), (500, "Poppins-Medium.ttf"), (600, "Poppins-SemiBold.ttf"), (700, "Poppins-Bold.ttf")]:
+    for weight, filename in [(400, "Poppins-400.woff2"), (500, "Poppins-500.woff2"), (600, "Poppins-600.woff2"), (700, "Poppins-700.woff2")]:
         font_path = fonts_dir / filename
         if font_path.exists():
-            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('file://{font_path}') format('truetype');}}\n"
+            with open(font_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            css += f"@font-face {{font-family:'Poppins';font-style:normal;font-weight:{weight};src:url('data:font/woff2;base64,{b64}') format('woff2');}}\n"
     return css
 
 
@@ -487,6 +496,21 @@ body {
   background: white;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+  /* Card text renders as small as ~5-10px (see the fit script below), and
+     Chromium's PDF export garbles glyph positioning for small BOLD text
+     specifically with this embedded font — confirmed via pdftotext on a
+     real render ("Gross Weight" -> "G r o s s We ig h t"), reproduced
+     across Chromium 130-151 and independent of TTF/WOFF2/single-process/
+     font-weight-vs-separate-family, so it's not a version or config fix.
+     `zoom` (unlike `transform`) participates in normal layout, so the
+     existing fit script's getBoundingClientRect()/scrollHeight-based
+     measurements keep working unchanged — render everything 4x bigger
+     (well clear of the bug, confirmed clean at 16px+) and shrink the
+     whole page back down via page.pdf's scale option in
+     _render_pdf_sync, so the printed output is pixel-identical to the
+     original design, just never actually shaped at a buggy small size.
+  */
+  zoom: 4;
 }
 
 .page {
@@ -976,6 +1000,9 @@ def _render_pdf_sync(html: str) -> bytes:
             format='A4',
             margin={'top': '0', 'right': '0', 'bottom': '0', 'left': '0'},
             print_background=True,
+            # Compensates the CSS `zoom: 4` on body (see its comment) —
+            # net effect is 1x, output is the same physical size as before.
+            scale=0.25,
         )
         browser.close()
     return pdf_bytes
