@@ -4,32 +4,37 @@ Renders the same HTML/CSS as the React frontend for pixel-perfect output.
 """
 import asyncio
 import base64
+import io
+import shutil
 import httpx
+import segno
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-from urllib.parse import quote
+from typing import List, Dict, Any, Optional, Tuple
 
 from ..core.config import settings
 from ..core.minio_client import minio_client
 
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
 
-def _b64_img(path: str) -> str:
-    with open(path, "rb") as f:
-        data = base64.b64encode(f.read()).decode()
-    ext = path.rsplit(".", 1)[-1].lower()
-    mime = "image/png" if ext == "png" else "image/jpeg"
-    return f"data:{mime};base64,{data}"
+# Images are staged as real files next to the HTML and referenced by relative
+# name, rather than inlined as base64 data URIs. Base64 costs 33% on the wire
+# and, worse, these two card assets are identical on every card — inlining put
+# ~200KB of duplicated text into each of the 10 cards on a page. As files,
+# Chromium fetches and decodes each exactly once and caches it.
+GAC_HEADER_SRC = "gac-header.png"
+BG_PARTICLES_SRC = "bg-particles.png"
+STATIC_ASSETS = {
+    GAC_HEADER_SRC: ASSETS_DIR / "gac_card_first_image.png",
+    BG_PARTICLES_SRC: ASSETS_DIR / "BG-particles1.png",
+}
 
 def _build_font_face_css() -> str:
-    # Embed as data URIs rather than referencing file:// paths — confirmed
-    # via a direct test (document.fonts.check() after render) that Poppins
-    # silently fails to load via file:// regardless of Chromium launch
-    # flags, most likely newer Chromium restricting file:// sub-resource
-    # loads from a page not itself navigated to a file:// origin (this page
-    # is set via page.set_content(), not a file:// navigation). Data URIs
-    # sidestep that origin restriction entirely, and this file already uses
-    # the same approach for the header/background images below.
+    # Embedded as data URIs. This originally worked around file:// fonts
+    # failing to load when the page came from page.set_content() rather than
+    # a file:// navigation; the render now navigates to a staged file, so
+    # they could be plain files too. Kept inline because all four weights
+    # come to ~41KB of base64 total, once per document — unlike the images,
+    # which were being duplicated per card and are now staged as files.
     #
     # WOFF2, not TTF: switching to data-URI TTF fixed loading but introduced
     # a *worse* bug — pdftotext on the generated PDF showed bold text
@@ -50,37 +55,26 @@ def _build_font_face_css() -> str:
     return css
 
 
-def _is_square_image(data_uri: str) -> bool:
-    """Return True if the image aspect ratio is close to 1:1 (0.85–1.15)."""
+def _is_square_image(content: bytes) -> bool:
+    """Return True if the image aspect ratio is close to 1:1 (0.85–1.15).
+
+    Note: this previously hand-parsed PNG/JPEG headers with `struct`, which
+    was never imported — every call raised NameError into the bare except and
+    returned False, so the `.square` photo class has never actually applied.
+    Pillow is already a dependency here (see _downscale_for_pdf) and reads the
+    dimensions of any format we accept.
+    """
     try:
-        _, b64data = data_uri.split(",", 1)
-        raw = base64.b64decode(b64data)
-        if raw[:8] == b'\x89PNG\r\n\x1a\n':
-            w, h = struct.unpack('>II', raw[16:24])
-        elif raw[:2] == b'\xff\xd8':
-            i = 2
-            w = h = 0
-            while i < len(raw) - 9:
-                if raw[i] != 0xff:
-                    break
-                marker = raw[i + 1]
-                if marker in (0xC0, 0xC1, 0xC2):
-                    h, w = struct.unpack('>HH', raw[i + 5:i + 9])
-                    break
-                length = struct.unpack('>H', raw[i + 2:i + 4])[0]
-                i += 2 + length
-            if not w or not h:
-                return False
-        else:
-            return False
+        from PIL import Image
+
+        with Image.open(io.BytesIO(content)) as img:
+            w, h = img.size
         ratio = w / h if h else 1
         return 0.85 <= ratio <= 1.15
     except Exception:
         return False
 
 
-GAC_HEADER_B64 = _b64_img(str(ASSETS_DIR / "gac_card_first_image.png"))
-BG_PARTICLES_B64 = _b64_img(str(ASSETS_DIR / "BG-particles1.png"))
 POPPINS_FONT_CSS = _build_font_face_css()
 
 
@@ -89,8 +83,27 @@ def _certificate_public_url(cert_uuid: str) -> str:
     return f"{frontend_base}/certificate/{cert_uuid}"
 
 
-def _fallback_qr_url(cert_uuid: str) -> str:
-    return f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={quote(_certificate_public_url(cert_uuid), safe='')}"
+def _qr_key(cert_uuid: str) -> str:
+    """Map key under which a cert's QR image is staged."""
+    return f"qr:{cert_uuid}"
+
+
+def _qr_png(cert_uuid: str) -> bytes:
+    """Render the certificate's QR code locally.
+
+    These used to come from api.qrserver.com — one external HTTPS round-trip
+    per certificate, every render, for an image that is a pure function of the
+    certificate URL. On a bulk download that is N sequential-ish network calls
+    before Chromium even starts, and any that failed fell through to putting
+    the remote URL straight into the <img>, so the render itself then blocked
+    on qrserver.com while waiting for networkidle. Generating locally takes
+    ~5ms per code and removes the external dependency from the render path.
+    """
+    buf = io.BytesIO()
+    segno.make(_certificate_public_url(cert_uuid), error='m').save(
+        buf, kind='png', scale=4, border=1
+    )
+    return buf.getvalue()
 
 CERTIFICATE_FIELD_CONFIG = {
     'single_diamond': ['gross_weight', 'diamond_weight', 'cut', 'clarity', 'color', 'conclusion', 'comment'],
@@ -170,7 +183,10 @@ def _downscale_for_pdf(content: bytes, content_type: str) -> tuple[bytes, str]:
 
         img = Image.open(BytesIO(content))
         img.load()
-        max_dim = 900
+        # The card photo prints ~2cm wide, i.e. ~240px at 300dpi. 900px was
+        # ~14x the pixels ever rendered, and Chromium holds every image
+        # decoded (900x900 RGBA is ~3.2MB each) while laying out a page.
+        max_dim = 400
         if img.width > max_dim or img.height > max_dim:
             img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
         if img.mode in ("RGBA", "LA", "P"):
@@ -186,14 +202,13 @@ def _downscale_for_pdf(content: bytes, content_type: str) -> tuple[bytes, str]:
         return content, content_type
 
 
-async def _fetch_as_b64(url: str) -> Optional[str]:
-    """Fetch an image URL and return a base64 data URI, or None on failure.
+async def _fetch_bytes(url: str) -> Optional[Tuple[bytes, str]]:
+    """Fetch an image URL and return (content, content_type), or None on failure.
 
-    Used for the QR code (an external qrserver.com URL, always reachable)
-    and as a last-resort fallback for signed URLs that point back at this
-    backend's own public domain — which containers generally can't reach via
-    hairpin NAT, so that path is expected to fail. Kept short (vs. the old
-    3×30s = 90s worst case) so a bulk PDF request never stalls long on it.
+    Last-resort fallback for signed URLs that point back at this backend's own
+    public domain — which containers generally can't reach via hairpin NAT, so
+    that path is expected to fail. Kept short (vs. the old 3×30s = 90s worst
+    case) so a bulk PDF request never stalls long on it.
     """
     if not url:
         return None
@@ -204,15 +219,14 @@ async def _fetch_as_b64(url: str) -> Optional[str]:
                 if r.status_code != 200:
                     continue
                 content_type = r.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
-                data = base64.b64encode(r.content).decode()
-                return f"data:{content_type};base64,{data}"
+                return _downscale_for_pdf(r.content, content_type)
         except Exception:
             pass
     return None
 
 
-def _storage_ref_to_b64(storage_ref: str) -> Optional[str]:
-    """Read an object like 'bucket/object' directly from storage and return a data URI."""
+def _storage_ref_to_bytes(storage_ref: str) -> Optional[Tuple[bytes, str]]:
+    """Read an object like 'bucket/object' from storage as (content, content_type)."""
     if not storage_ref or "/" not in storage_ref:
         return None
     try:
@@ -220,29 +234,37 @@ def _storage_ref_to_b64(storage_ref: str) -> Optional[str]:
         response = minio_client.get_object(bucket, object_name)
         content = response.read()
         content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-        # This is always a real cert/client photo (never the QR code, which
-        # goes through _fetch_as_b64 instead), so lossy-shrinking it for
-        # print-size embedding is safe.
-        content, content_type = _downscale_for_pdf(content, content_type)
-        data = base64.b64encode(content).decode()
-        return f"data:{content_type};base64,{data}"
+        # Always a real cert/client photo, so lossy-shrinking it to print size
+        # is safe.
+        return _downscale_for_pdf(content, content_type)
     except Exception:
         return None
 
 
-async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
-    """Fetch all cert images concurrently and return url/storage-ref→base64 map.
+async def _prefetch_images(certs: List[Dict[str, Any]], out_dir: Path) -> Dict[str, str]:
+    """Stage every image this batch needs into out_dir, keyed by source.
 
-    Two source types get merged into one map here so render functions never
-    block on I/O per-cert:
+    Returns a source→filename map, so render functions never block on I/O
+    per-cert and the HTML carries short relative names instead of megabytes of
+    base64. Sources:
     - storage refs ('bucket/key', e.g. cert['photo_url']) — read directly
       from R2, which is what actually works reliably (the signed HTTP URLs
       point back at this same backend's own public domain, which containers
       generally can't hairpin back to themselves through, so that path is
       kept only as a last-resort fallback for callers that lack a ref).
-    - signed URLs (photo_signed_url etc., and the QR code) — fetched over
-      HTTP, still needed for the QR code (an external qrserver.com URL).
+    - signed URLs (photo_signed_url etc.) — fetched over HTTP.
+    - QR codes — generated locally, see _qr_png.
     """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, source in STATIC_ASSETS.items():
+        shutil.copyfile(source, out_dir / name)
+
+    def _write(index: int, content: bytes, content_type: str) -> str:
+        ext = 'png' if 'png' in content_type else 'jpg'
+        name = f"img{index}.{ext}"
+        (out_dir / name).write_bytes(content)
+        return name
+
     storage_refs = set()
     urls = set()
     for cert in certs:
@@ -254,21 +276,46 @@ async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
             url = cert.get(key)
             if url:
                 urls.add(url)
-        # Add fallback QR URL
-        if cert.get('uuid'):
-            urls.add(_fallback_qr_url(cert["uuid"]))
 
+    storage_refs = sorted(storage_refs)
+    urls = sorted(urls)
     storage_results = await asyncio.gather(
-        *[asyncio.to_thread(_storage_ref_to_b64, ref) for ref in storage_refs]
+        *[asyncio.to_thread(_storage_ref_to_bytes, ref) for ref in storage_refs]
     )
-    url_results = await asyncio.gather(*[_fetch_as_b64(url) for url in urls])
+    url_results = await asyncio.gather(*[_fetch_bytes(url) for url in urls])
 
-    img_map = {ref: b64 for ref, b64 in zip(storage_refs, storage_results) if b64}
+    img_map: Dict[str, str] = {}
+    photo_content: Dict[str, bytes] = {}
+    counter = 0
+    for ref, result in zip(storage_refs, storage_results):
+        if not result:
+            continue
+        content, content_type = result
+        img_map[ref] = _write(counter, content, content_type)
+        photo_content[ref] = content
+        counter += 1
     # Only fall back to the (possibly-hairpinned, slower) HTTP fetch for a
     # signed URL if nothing already resolved it via the direct storage ref.
-    for url, b64 in zip(urls, url_results):
-        if b64 and url not in img_map:
-            img_map[url] = b64
+    for url, result in zip(urls, url_results):
+        if not result or url in img_map:
+            continue
+        content, content_type = result
+        img_map[url] = _write(counter, content, content_type)
+        photo_content[url] = content
+        counter += 1
+
+    for cert in certs:
+        cert_uuid = cert.get('uuid')
+        if cert_uuid:
+            name = f"qr-{counter}.png"
+            (out_dir / name).write_bytes(_qr_png(cert_uuid))
+            img_map[_qr_key(cert_uuid)] = name
+            counter += 1
+        # Squareness drives a CSS class; decide it here while the bytes are in
+        # hand rather than re-reading the staged file during rendering.
+        photo_ref = cert.get('photo_url') or cert.get('photo_signed_url') or ''
+        cert['_photo_is_square'] = _is_square_image(photo_content.get(photo_ref, b''))
+
     return img_map
 
 
@@ -288,7 +335,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
         or img_map.get(cert.get('brand_logo_signed_url') or '')
         or ''
     )
-    qr_url = img_map.get(_fallback_qr_url(cert['uuid'])) or _fallback_qr_url(cert['uuid']) if cert.get('uuid') else ''
+    qr_url = img_map.get(_qr_key(cert['uuid']), '') if cert.get('uuid') else ''
     cert_number = _esc(_normalize_display_text(cert.get('certificate_number') or ''))
     description = ''
     if group not in NO_DESCRIPTION_GROUPS:
@@ -305,7 +352,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     # Photo
     NO_IMAGE_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70'%3E%3Crect fill='%23eeeeee' width='70' height='70'/%3E%3Ctext fill='%23aaaaaa' font-family='sans-serif' font-size='8' text-anchor='middle' x='35' y='38'%3ENo Image%3C/text%3E%3C/svg%3E"
     _photo_src = _esc(photo_url) if photo_url else NO_IMAGE_SVG
-    _photo_class = "cert-photo square" if photo_url and _is_square_image(photo_url) else "cert-photo"
+    _photo_class = "cert-photo square" if photo_url and cert.get('_photo_is_square') else "cert-photo"
     photo_html = f'''<div class="cert-photo-frame">
   <img src="{_photo_src}" class="{_photo_class}" alt="Photo">
   <span class="approx-label">Approx Photo</span>
@@ -443,7 +490,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     return f'''
 <div class="cert-card" data-cert-uuid="{_esc(cert.get('uuid',''))}" data-row-count="{row_count}">
   <header class="card-header">
-    <img src="{GAC_HEADER_B64}" class="gac-header-img" alt="GAC">
+    <img src="{GAC_HEADER_SRC}" class="gac-header-img" alt="GAC">
     <div class="header-right">
       {brand_logo_html}
       {qr_html}
@@ -454,7 +501,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     <div class="cert-title">CERTIFICATE OF AUTHENTICITY</div>
     <div class="cert-details">
       <div class="bg-particles">
-        <img src="{BG_PARTICLES_B64}" alt="">
+        <img src="{BG_PARTICLES_SRC}" alt="">
       </div>
       <div class="fields-area" style="{density_style}">
         {rows_html}
@@ -1002,7 +1049,7 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
 </html>"""
 
 
-def _render_pdf_sync(html: str) -> bytes:
+def _render_pdf_sync(html_path: str) -> bytes:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
@@ -1032,7 +1079,10 @@ def _render_pdf_sync(html: str) -> bytes:
             '--js-flags=--max-old-space-size=128',
         ])
         page = browser.new_page()
-        page.set_content(html, wait_until='networkidle')
+        # Navigate to the staged file rather than injecting the markup:
+        # a file:// origin lets the sibling images load from disk, so the
+        # HTML carries relative names instead of megabytes of base64.
+        page.goto(f'file://{html_path}', wait_until='networkidle')
         page.wait_for_function("window.__cardsFitted === true", timeout=5000)
         page.wait_for_timeout(800)
         pdf_bytes = page.pdf(
@@ -1044,15 +1094,15 @@ def _render_pdf_sync(html: str) -> bytes:
     return pdf_bytes
 
 
-def _render_pdf_worker(html: str, queue) -> None:
+def _render_pdf_worker(html_path: str, queue) -> None:
     """Entry point for the isolated subprocess — see _render_pdf_isolated."""
     try:
-        queue.put(("ok", _render_pdf_sync(html)))
+        queue.put(("ok", _render_pdf_sync(html_path)))
     except Exception as e:
         queue.put(("error", f"{type(e).__name__}: {e}"))
 
 
-async def _render_pdf_isolated(html: str) -> bytes:
+async def _render_pdf_isolated(html_path: str) -> bytes:
     """Render one batch's PDF in a brand-new OS process.
 
     Measured via docker stats across repeated in-process Chromium launches
@@ -1070,7 +1120,7 @@ async def _render_pdf_isolated(html: str) -> bytes:
 
     ctx = mp.get_context("spawn")
     result_queue = ctx.Queue()
-    proc = ctx.Process(target=_render_pdf_worker, args=(html, result_queue))
+    proc = ctx.Process(target=_render_pdf_worker, args=(html_path, result_queue))
     proc.start()
     try:
         # A hard crash (e.g. Chromium segfaulting) kills the process without
@@ -1101,21 +1151,29 @@ async def _render_pdf_isolated(html: str) -> bytes:
 PDF_BATCH_SIZE = 8
 
 
+async def _render_batch(batch: List[Dict[str, Any]]) -> bytes:
+    """Stage one batch's assets to a temp dir, render it, then clean up."""
+    import tempfile
+
+    work_dir = Path(tempfile.mkdtemp(prefix="certpdf-"))
+    try:
+        img_map = await _prefetch_images(batch, work_dir)
+        html_path = work_dir / "index.html"
+        html_path.write_text(_build_html(batch, img_map), encoding="utf-8")
+        return await _render_pdf_isolated(str(html_path))
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
 async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
     if len(certs) <= PDF_BATCH_SIZE:
-        img_map = await _prefetch_images(certs)
-        html = _build_html(certs, img_map)
-        return await _render_pdf_isolated(html)
+        return await _render_batch(certs)
 
-    import io
     from pypdf import PdfWriter, PdfReader
 
     writer = PdfWriter()
     for i in range(0, len(certs), PDF_BATCH_SIZE):
-        batch = certs[i:i + PDF_BATCH_SIZE]
-        img_map = await _prefetch_images(batch)
-        html = _build_html(batch, img_map)
-        pdf_bytes = await _render_pdf_isolated(html)
+        pdf_bytes = await _render_batch(certs[i:i + PDF_BATCH_SIZE])
         for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
             writer.add_page(page)
 
