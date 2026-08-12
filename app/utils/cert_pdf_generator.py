@@ -1140,15 +1140,21 @@ async def _render_pdf_isolated(html_path: str) -> bytes:
     return payload
 
 
-# A single render holds every cert's base64-encoded images plus the full
-# HTML string in memory at once, on top of Chromium's own footprint — fine
-# for a handful of certs, but a 100-cert request OOM-killed the backend
-# (300M container limit). Rendering in bounded batches (each isolated in
-# its own subprocess, see _render_pdf_isolated) and merging the resulting
-# PDFs keeps peak memory roughly constant no matter how many certificates
-# are requested overall (relevant since "download from history" can mean
-# anywhere from a handful up to tens of thousands).
-PDF_BATCH_SIZE = 8
+# A single render holds every cert's images plus the full HTML in memory at
+# once, on top of Chromium's own footprint — fine for a handful of certs, but
+# a 100-cert request OOM-killed the backend. Rendering in bounded batches
+# (each isolated in its own subprocess, see _render_pdf_isolated) and merging
+# the resulting PDFs keeps peak memory roughly constant no matter how many
+# certificates are requested overall (relevant since "download from history"
+# can mean anywhere from a handful up to tens of thousands).
+#
+# This must stay a multiple of CARDS_PER_PAGE, or the last page of every batch
+# is short: at 8, a 12-cert download came out as pages of 8 and 4 rather than
+# 10 and 2. It was 8 because a 10-cert batch used to OOM the renderer; with
+# QR codes generated locally and images staged as files rather than inlined,
+# a 12-cert request now peaks around 209MiB of the 600MiB container limit and
+# renders in ~14s, measured on the 1-vCPU production droplet.
+PDF_BATCH_SIZE = 10
 
 
 async def _render_batch(batch: List[Dict[str, Any]]) -> bytes:
