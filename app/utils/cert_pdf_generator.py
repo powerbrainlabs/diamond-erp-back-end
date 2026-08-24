@@ -168,7 +168,21 @@ def _estimate_text_lines(value: Any, chars_per_line: int, min_lines: int = 1, ma
     return max(min_lines, min(line_count, max_lines))
 
 
-def _downscale_for_pdf(content: bytes, content_type: str) -> tuple[bytes, str]:
+# How many pixels each kind of image is actually rendered at, so nothing is
+# carried at more resolution than it can ever show. Chromium holds every image
+# decoded while laying out a page, so this is the dominant memory cost.
+#
+# The front photo is 0.8in tall (~240px at 300dpi) and the header brand logo is
+# 65x43px, so a few hundred pixels is already generous. The same brand logo
+# file, however, is also used as the card BACK, where .back-logo is
+# width/height 100% over the full 8.6x5.5cm card — ~1016x650px at 300dpi. One
+# shared cap cannot serve both: capping logos at photo size upscales the back
+# 2.5x and visibly softens it.
+PHOTO_MAX_DIM = 500
+LOGO_MAX_DIM = 1400
+
+
+def _downscale_for_pdf(content: bytes, content_type: str, max_dim: int = PHOTO_MAX_DIM) -> tuple[bytes, str]:
     """Shrink an image before it gets base64-embedded and rasterized by
     Chromium for print. Certificate photos come straight from camera/phone
     uploads (multi-MB, thousands of pixels wide) — full resolution is
@@ -183,10 +197,6 @@ def _downscale_for_pdf(content: bytes, content_type: str) -> tuple[bytes, str]:
 
         img = Image.open(BytesIO(content))
         img.load()
-        # The card photo prints ~2cm wide, i.e. ~240px at 300dpi. 900px was
-        # ~14x the pixels ever rendered, and Chromium holds every image
-        # decoded (900x900 RGBA is ~3.2MB each) while laying out a page.
-        max_dim = 400
         if img.width > max_dim or img.height > max_dim:
             img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
         if img.mode in ("RGBA", "LA", "P"):
@@ -202,7 +212,7 @@ def _downscale_for_pdf(content: bytes, content_type: str) -> tuple[bytes, str]:
         return content, content_type
 
 
-async def _fetch_bytes(url: str) -> Optional[Tuple[bytes, str]]:
+async def _fetch_bytes(url: str, max_dim: int = PHOTO_MAX_DIM) -> Optional[Tuple[bytes, str]]:
     """Fetch an image URL and return (content, content_type), or None on failure.
 
     Last-resort fallback for signed URLs that point back at this backend's own
@@ -219,13 +229,13 @@ async def _fetch_bytes(url: str) -> Optional[Tuple[bytes, str]]:
                 if r.status_code != 200:
                     continue
                 content_type = r.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
-                return _downscale_for_pdf(r.content, content_type)
+                return _downscale_for_pdf(r.content, content_type, max_dim)
         except Exception:
             pass
     return None
 
 
-def _storage_ref_to_bytes(storage_ref: str) -> Optional[Tuple[bytes, str]]:
+def _storage_ref_to_bytes(storage_ref: str, max_dim: int = PHOTO_MAX_DIM) -> Optional[Tuple[bytes, str]]:
     """Read an object like 'bucket/object' from storage as (content, content_type)."""
     if not storage_ref or "/" not in storage_ref:
         return None
@@ -236,7 +246,7 @@ def _storage_ref_to_bytes(storage_ref: str) -> Optional[Tuple[bytes, str]]:
         content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
         # Always a real cert/client photo, so lossy-shrinking it to print size
         # is safe.
-        return _downscale_for_pdf(content, content_type)
+        return _downscale_for_pdf(content, content_type, max_dim)
     except Exception:
         return None
 
@@ -265,24 +275,31 @@ async def _prefetch_images(certs: List[Dict[str, Any]], out_dir: Path) -> Dict[s
         (out_dir / name).write_bytes(content)
         return name
 
+    # Logos need the bigger cap: the same file that is a 65x43px header badge on
+    # the front is also the full-bleed card back.
+    caps: Dict[str, int] = {}
+
+    def _remember(store: set, value: Optional[str], cap: int) -> None:
+        if value:
+            store.add(value)
+            caps[value] = max(caps.get(value, 0), cap)
+
     storage_refs = set()
     urls = set()
     for cert in certs:
-        for key in ('photo_url', 'brand_logo_url', 'rear_brand_logo_url'):
-            ref = cert.get(key)
-            if ref:
-                storage_refs.add(ref)
-        for key in ('photo_signed_url', 'brand_logo_signed_url', 'rear_brand_logo_signed_url'):
-            url = cert.get(key)
-            if url:
-                urls.add(url)
+        _remember(storage_refs, cert.get('photo_url'), PHOTO_MAX_DIM)
+        for key in ('brand_logo_url', 'rear_brand_logo_url'):
+            _remember(storage_refs, cert.get(key), LOGO_MAX_DIM)
+        _remember(urls, cert.get('photo_signed_url'), PHOTO_MAX_DIM)
+        for key in ('brand_logo_signed_url', 'rear_brand_logo_signed_url'):
+            _remember(urls, cert.get(key), LOGO_MAX_DIM)
 
     storage_refs = sorted(storage_refs)
     urls = sorted(urls)
     storage_results = await asyncio.gather(
-        *[asyncio.to_thread(_storage_ref_to_bytes, ref) for ref in storage_refs]
+        *[asyncio.to_thread(_storage_ref_to_bytes, ref, caps[ref]) for ref in storage_refs]
     )
-    url_results = await asyncio.gather(*[_fetch_bytes(url) for url in urls])
+    url_results = await asyncio.gather(*[_fetch_bytes(url, caps[url]) for url in urls])
 
     img_map: Dict[str, str] = {}
     photo_content: Dict[str, bytes] = {}
