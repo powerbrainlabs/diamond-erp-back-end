@@ -3,6 +3,7 @@ Certificate PDF generator using Playwright (Chromium).
 Renders the same HTML/CSS as the React frontend for pixel-perfect output.
 """
 import asyncio
+import atexit
 import base64
 import io
 import shutil
@@ -1087,119 +1088,176 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
 </html>"""
 
 
-def _render_pdf_sync(html_paths: List[str]) -> List[bytes]:
-    """Render each staged document to PDF bytes, reusing one Chromium.
+# Trim Chromium's baseline footprint — confirmed via dmesg that the
+# container's cgroup OOM killer was killing the chrome-headless renderer
+# once combined memory (uvicorn + Chromium main + renderer + helpers)
+# crossed the container limit.
+_CHROMIUM_ARGS = [
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    # Multi-process Chromium (browser + separate renderer, IPC between them)
+    # timed out past 90s per batch on this droplet's single vCPU — no other
+    # core to hide the IPC/context-switch overhead on.
+    '--single-process',
+    '--disable-extensions',
+    '--disable-background-networking',
+    '--disable-default-apps',
+    '--disable-sync',
+    '--metrics-recording-only',
+    '--disable-breakpad',
+    '--js-flags=--max-old-space-size=128',
+]
 
-    Launching Chromium costs about five seconds on this hardware — measured
-    as the difference between the first batch of a request (10.9s) and the
-    second (5.9s). Paying that per batch meant a 100-cert download spent
-    roughly 45s doing nothing but starting browsers. One launch per process,
-    a fresh page per document, so the startup is amortised across the whole
-    group while each document still gets a clean page.
+
+def _render_documents(page, html_paths: List[str]) -> List[bytes]:
+    """Render each staged document to PDF bytes on an already-open page.
+
+    One page navigated per document rather than a page created and closed per
+    document: under --single-process the renderer lives in the browser
+    process, and closing the page tore the whole browser down. Navigation
+    gets a fresh document — and with it a reset __cardsFitted — anyway.
     """
-    from playwright.sync_api import sync_playwright
-
     results: List[bytes] = []
-    with sync_playwright() as p:
-        # Extra flags beyond the original two trim Chromium's own baseline
-        # footprint — confirmed via dmesg that the container's cgroup OOM
-        # killer was killing the chrome-headless renderer process itself
-        # once combined memory (uvicorn + Chromium main + renderer +
-        # helper processes) crossed the container limit.
-        browser = p.chromium.launch(args=[
-            '--no-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            # Multi-process Chromium (browser + separate renderer, IPC
-            # between them) timed out past 90s per batch on this droplet's
-            # single vCPU — no other core to hide the IPC/context-switch
-            # overhead on. Memory is now handled by downscaling images
-            # before embedding (the actual dominant footprint), so
-            # single-process's memory-concentration downside matters much
-            # less than its speed win here.
-            '--single-process',
-            '--disable-extensions',
-            '--disable-background-networking',
-            '--disable-default-apps',
-            '--disable-sync',
-            '--metrics-recording-only',
-            '--disable-breakpad',
-            '--js-flags=--max-old-space-size=128',
-        ])
-        # One page, navigated per document. Creating and closing a page per
-        # document tore down the whole browser under --single-process, where
-        # the renderer shares the browser process; navigating reuses the same
-        # target and gets a fresh document (and a reset __cardsFitted) anyway.
-        page = browser.new_page()
-        for html_path in html_paths:
-            # Navigate to the staged file rather than injecting the markup:
-            # a file:// origin lets the sibling images load from disk, so the
-            # HTML carries relative names instead of megabytes of base64.
-            #
-            # 'load' rather than 'networkidle': every asset is now a sibling
-            # file, so there is no network to go idle and networkidle just
-            # adds its 500ms quiet window. The real gate is __cardsFitted,
-            # which the fit script only sets after document.fonts.ready — so
-            # reaching it already means fonts are loaded and layout is
-            # settled, and the fixed 800ms sleep that used to follow it was
-            # waiting for something that had already happened.
-            page.goto(f'file://{html_path}', wait_until='load')
-            page.wait_for_function("window.__cardsFitted === true", timeout=15000)
-            page.wait_for_timeout(100)
-            results.append(page.pdf(
-                format='A4',
-                margin={'top': '0', 'right': '0', 'bottom': '0', 'left': '0'},
-                print_background=True,
-            ))
-        browser.close()
+    for html_path in html_paths:
+        # Navigate to the staged file rather than injecting the markup: a
+        # file:// origin lets the sibling images load from disk, so the HTML
+        # carries relative names instead of megabytes of base64.
+        #
+        # 'load' rather than 'networkidle': every asset is a sibling file, so
+        # there is no network to go idle and networkidle only adds its 500ms
+        # quiet window. The real gate is __cardsFitted, which the fit script
+        # sets only after document.fonts.ready — reaching it already means
+        # fonts are loaded and layout has settled.
+        page.goto(f'file://{html_path}', wait_until='load')
+        page.wait_for_function("window.__cardsFitted === true", timeout=15000)
+        page.wait_for_timeout(100)
+        results.append(page.pdf(
+            format='A4',
+            margin={'top': '0', 'right': '0', 'bottom': '0', 'left': '0'},
+            print_background=True,
+        ))
     return results
 
 
-def _render_pdf_worker(html_paths: List[str], queue) -> None:
-    """Entry point for the isolated subprocess — see _render_pdf_isolated."""
-    try:
-        queue.put(("ok", _render_pdf_sync(html_paths)))
-    except Exception as e:
-        queue.put(("error", f"{type(e).__name__}: {e}"))
+# Documents rendered before the worker is recycled. Chromium does not give
+# back everything it takes across repeated renders in one process, which is
+# what motivated isolating each batch originally; recycling keeps that bounded
+# without paying the launch on every request.
+RENDER_RECYCLE_AFTER = 40
+
+
+def _render_service(req_q, res_q) -> None:
+    """Long-lived worker: one warm Chromium, rendering jobs off a queue."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=_CHROMIUM_ARGS)
+        page = browser.new_page()
+        res_q.put(("ready", None))
+        while True:
+            job = req_q.get()
+            if job is None:
+                break
+            try:
+                res_q.put(("ok", _render_documents(page, job)))
+            except Exception as e:
+                # A broken page or browser will not recover on its own; report
+                # and exit so the parent replaces the whole process.
+                res_q.put(("error", f"{type(e).__name__}: {e}"))
+                break
+        try:
+            browser.close()
+        except Exception:
+            pass
+
+
+class _RenderPool:
+    """Keeps one Chromium warm across requests.
+
+    Launching Chromium costs ~5s on this hardware, which for a typical 10-40
+    certificate download was 28-60% of the whole request. The browser now
+    outlives the request, so that is paid on the first download after a
+    restart (or a recycle) instead of on every one. Access is serialised: the
+    droplet has a single core, so concurrent renders would contend anyway, and
+    one warm browser cannot serve two callers at once.
+    """
+
+    def __init__(self) -> None:
+        self._proc = None
+        self._req_q = None
+        self._res_q = None
+        self._rendered = 0
+        self._lock = asyncio.Lock()
+
+    def _start(self) -> None:
+        import multiprocessing as mp
+
+        ctx = mp.get_context("spawn")
+        self._req_q = ctx.Queue()
+        self._res_q = ctx.Queue()
+        self._proc = ctx.Process(
+            target=_render_service, args=(self._req_q, self._res_q), daemon=True
+        )
+        self._proc.start()
+        status, payload = self._res_q.get(True, 120)
+        if status != "ready":
+            raise RuntimeError(f"render worker failed to start: {payload}")
+        self._rendered = 0
+
+    def _stop(self) -> None:
+        if self._proc is None:
+            return
+        try:
+            self._req_q.put(None)
+            self._proc.join(5)
+        except Exception:
+            pass
+        if self._proc.is_alive():
+            self._proc.terminate()
+            self._proc.join(5)
+        self._proc = None
+        self._req_q = self._res_q = None
+
+    async def render(self, html_paths: List[str]) -> List[bytes]:
+        async with self._lock:
+            for attempt in (1, 2):
+                if self._proc is None or not self._proc.is_alive():
+                    await asyncio.to_thread(self._start)
+                try:
+                    return await asyncio.to_thread(self._render_once, html_paths)
+                except Exception:
+                    # Replace the worker and give it one clean retry, so a
+                    # single bad render does not fail an entire download.
+                    await asyncio.to_thread(self._stop)
+                    if attempt == 2:
+                        raise
+            raise RuntimeError("unreachable")
+
+    def _render_once(self, html_paths: List[str]) -> List[bytes]:
+        import queue as queue_module
+
+        self._req_q.put(html_paths)
+        try:
+            status, payload = self._res_q.get(True, 60 + 90 * len(html_paths))
+        except queue_module.Empty:
+            raise RuntimeError(
+                f"render worker produced no result for {len(html_paths)} document(s)"
+            )
+        if status != "ok":
+            raise RuntimeError(f"render worker failed: {payload}")
+        self._rendered += len(html_paths)
+        if self._rendered >= RENDER_RECYCLE_AFTER:
+            self._stop()
+        return payload
+
+
+_RENDER_POOL = _RenderPool()
+atexit.register(_RENDER_POOL._stop)
 
 
 async def _render_pdf_isolated(html_paths: List[str]) -> List[bytes]:
-    """Render one batch's PDF in a brand-new OS process.
-
-    Measured via docker stats across repeated in-process Chromium launches
-    (same live Python process, one after another via asyncio.to_thread):
-    memory plateaus well above single-request baseline between batches
-    (~242MiB vs ~97MiB) and climbs further each batch until the container's
-    cgroup OOM-killer takes out the renderer — Playwright/Chromium isn't
-    fully releasing OS-level resources back across repeated launches in the
-    same process. A fresh subprocess per batch sidesteps that entirely:
-    Linux reclaims 100% of a process's memory when it exits, regardless of
-    what leaked inside it.
-    """
-    import multiprocessing as mp
-    import queue as queue_module
-
-    ctx = mp.get_context("spawn")
-    result_queue = ctx.Queue()
-    proc = ctx.Process(target=_render_pdf_worker, args=(html_paths, result_queue))
-    proc.start()
-    try:
-        # A hard crash (e.g. Chromium segfaulting) kills the process without
-        # ever putting anything on the queue — bound the wait so that fails
-        # loudly instead of hanging the request forever.
-        budget = 60 + 90 * len(html_paths)
-        status, payload = await asyncio.to_thread(result_queue.get, True, budget)
-    except queue_module.Empty:
-        proc.terminate()
-        raise RuntimeError(
-            f"PDF render subprocess produced no result within {budget}s "
-            f"for {len(html_paths)} document(s) (exit code: {proc.exitcode})"
-        )
-    finally:
-        await asyncio.to_thread(proc.join, 5)
-    if status == "error":
-        raise RuntimeError(f"PDF render subprocess failed: {payload}")
-    return payload
+    return await _RENDER_POOL.render(html_paths)
 
 
 # A single render holds every cert's images plus the full HTML in memory at
