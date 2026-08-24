@@ -1,7 +1,8 @@
+import asyncio
 import io
 from typing import List
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request
+from fastapi.responses import StreamingResponse, Response
 from datetime import datetime
 import uuid
 import httpx
@@ -32,12 +33,34 @@ def compress_image(image_bytes: bytes, filename: str, max_width: int = 1200, qua
     try:
         filename_lower = filename.lower()
 
-        # PNG files: preserve transparency and full resolution (no resize, no lossy compression)
+        # PNG files keep their transparency (background-removed cert photos
+        # rely on it), but they used to skip both the resize and any lossy
+        # step, so a background-removed phone photo stayed several times
+        # larger than the equivalent JPEG. Bound the pixels the same way as
+        # every other format and quantise the colours: a cert photo is a
+        # subject on a transparent field, which palettes well, and the alpha
+        # channel survives.
         if filename_lower.endswith('.png'):
             img = Image.open(io.BytesIO(image_bytes))
+            if img.mode not in ('RGBA', 'LA', 'P'):
+                img = img.convert('RGBA')
+            if img.width > max_width:
+                ratio = max_width / img.width
+                img = img.resize((max_width, int(img.height * ratio)), Image.Resampling.LANCZOS)
             output = io.BytesIO()
-            img.save(output, format='PNG', optimize=True)
-            return output.getvalue(), 'image/png'
+            try:
+                quantised = img.convert('RGBA').quantize(
+                    colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.FLOYDSTEINBERG
+                )
+                quantised.save(output, format='PNG', optimize=True)
+            except Exception:
+                output = io.BytesIO()
+                img.save(output, format='PNG', optimize=True)
+            result = output.getvalue()
+            logger.info(
+                f"\U0001F4E6 PNG compressed: {filename} | {len(image_bytes):,} -> {len(result):,} bytes"
+            )
+            return result, 'image/png'
 
         # Open image from bytes
         img = Image.open(io.BytesIO(image_bytes))
@@ -187,35 +210,47 @@ async def upload_temp_file(files: List[UploadFile] = File(...)):
 
 # /api/files/presigned/<bucket>/<file_id>
 @router.get("/proxy/{bucket}/{file_id:path}")
-async def proxy_file(bucket: str, file_id: str):
+async def proxy_file(bucket: str, file_id: str, request: Request):
     """
     Proxy endpoint for serving files from MinIO.
     Used by the frontend to display images without exposing direct MinIO URLs.
+
+    Every image the UI shows comes through here (get_presigned_url hands out
+    these URLs), so this endpoint's concurrency is the ceiling on how fast a
+    page of certificates can load. The storage client is synchronous boto3;
+    awaiting it on the event loop blocked the entire worker for the duration
+    of each fetch, so a page of thumbnails served one at a time and anything
+    else in flight — API calls, a PDF render — queued behind them. Running it
+    on the threadpool lets them overlap.
     """
-    try:
+    def _load():
         response = minio_client.get_object(bucket, file_id)
-        file_data = response.read()
-        content_type = response.headers.get("content-type", "application/octet-stream")
+        return response.read(), dict(response.headers)
 
-        # Build headers, including cache-related headers from MinIO
-        headers = {
-            "Cache-Control": "public, max-age=86400",
-            "Accept-Ranges": "bytes",
-        }
-
-        # Pass through ETag and Last-Modified if available
-        if "etag" in response.headers:
-            headers["ETag"] = response.headers["etag"]
-        if "last-modified" in response.headers:
-            headers["Last-Modified"] = response.headers["last-modified"]
-
-        return StreamingResponse(
-            io.BytesIO(file_data),
-            media_type=content_type,
-            headers=headers,
-        )
+    try:
+        file_data, src_headers = await asyncio.to_thread(_load)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"File not found: {str(e)}")
+
+    content_type = src_headers.get("content-type", "application/octet-stream")
+    etag = src_headers.get("etag")
+
+    headers = {
+        "Cache-Control": "public, max-age=86400",
+    }
+    if etag:
+        headers["ETag"] = etag
+    if "last-modified" in src_headers:
+        headers["Last-Modified"] = src_headers["last-modified"]
+
+    # These are content-addressed uploads (uuid-prefixed keys) that are never
+    # rewritten in place, so a matching ETag means the browser's copy is good.
+    # Answering revalidations with 304 keeps repeat views from re-sending the
+    # whole body through this worker.
+    if etag and request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+
+    return Response(content=file_data, media_type=content_type, headers=headers)
 
 
 @router.get("/presigned/{bucket}/{file_id}")
