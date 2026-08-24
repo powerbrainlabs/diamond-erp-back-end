@@ -136,7 +136,7 @@ minio_client = R2Client()
 
 def ensure_buckets():
     try:
-        for bucket in ["cert-temp", "certificates", "job-photos", "client-logos"]:
+        for bucket in ["cert-temp", "certificates", "job-photos", "client-logos", "org-logos"]:
             if not minio_client.bucket_exists(bucket):
                 minio_client.make_bucket(bucket)
         print("✅ R2 buckets ready.")

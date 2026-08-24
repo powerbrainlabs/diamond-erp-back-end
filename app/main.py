@@ -22,6 +22,8 @@ from .api.staff import router as staff_router
 from .api.search import router as search_router
 from .api.photos import router as photos_router
 from .api.management_settings import router as management_settings_router
+from .api.organizations import router as organizations_router
+from .api.org_header_template import router as org_header_template_router
 
 from .core.security import hash_password
 from .core.minio_client import ensure_buckets
@@ -56,6 +58,7 @@ async def startup_event():
             "password": hash_password(settings.SUPER_ADMIN_PASSWORD),
             "name": settings.SUPER_ADMIN_NAME,
             "role": "super_admin",
+            "organization_id": None,  # platform-level, not tenant-bound
             "is_active": True,
             "created_at": now,
             "updated_at": now,
@@ -106,6 +109,8 @@ app.include_router(certificate_types_router)
 app.include_router(dynamic_categories_router)
 app.include_router(photos_router)
 app.include_router(management_settings_router)
+app.include_router(organizations_router)
+app.include_router(org_header_template_router)
 
 
 @app.get("/")

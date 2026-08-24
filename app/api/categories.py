@@ -4,7 +4,7 @@ from datetime import datetime
 from bson import ObjectId
 import uuid
 
-from ..core.dependencies import require_admin, require_staff
+from ..core.dependencies import require_admin, require_staff, get_org_scope, org_filter
 from ..db.database import get_db
 
 router = APIRouter(prefix="/api/categories", tags=["Categories (Deprecated)"])
@@ -25,7 +25,8 @@ async def create_attribute(
     group: str,
     type: str,
     payload: dict,
-    current_user: dict = Depends(require_staff)
+    current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
 
@@ -57,7 +58,8 @@ async def create_attribute(
         "group": group,
         "type": type,
         "name": {"$regex": f"^{name}$", "$options": "i"},
-        "is_deleted": False
+        "is_deleted": False,
+        **org_filter(scope),
     })
     if existing:
         raise HTTPException(status_code=409, detail="Name already exists")
@@ -65,6 +67,7 @@ async def create_attribute(
     now = datetime.utcnow()
     doc = {
         "uuid": str(uuid.uuid4()),
+        "organization_id": scope,
         "group": group,
         "type": type,
         "name": name,
@@ -95,6 +98,7 @@ async def list_attributes(
     type: str,
     search: Optional[str] = None,
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
 
@@ -116,7 +120,7 @@ async def list_attributes(
     if type not in valid_types:
         raise HTTPException(status_code=400, detail=f"Invalid type '{type}' for group '{group}'")
 
-    filt = {"group": group, "type": type, "is_deleted": False}
+    filt = {"group": group, "type": type, "is_deleted": False, **org_filter(scope)}
     if search:
         filt["name"] = {"$regex": search, "$options": "i"}
 
@@ -128,9 +132,9 @@ async def list_attributes(
 
 # ✅ Get Single Attribute
 @router.get("/{uuid}")
-async def get_attribute(uuid: str, current_user: dict = Depends(require_staff)):
+async def get_attribute(uuid: str, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.attributes.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.attributes.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Attribute not found")
     return serialize_attribute(doc)
@@ -138,9 +142,9 @@ async def get_attribute(uuid: str, current_user: dict = Depends(require_staff)):
 
 # ✅ Update Attribute
 @router.put("/{uuid}")
-async def update_attribute(uuid: str, payload: dict, current_user: dict = Depends(require_staff)):
+async def update_attribute(uuid: str, payload: dict, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.attributes.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.attributes.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Attribute not found")
 
@@ -159,9 +163,9 @@ async def update_attribute(uuid: str, payload: dict, current_user: dict = Depend
 
 # ✅ Soft Delete
 @router.delete("/{uuid}")
-async def delete_attribute(uuid: str, current_user: dict = Depends(require_admin)):
+async def delete_attribute(uuid: str, current_user: dict = Depends(require_admin), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.attributes.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.attributes.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Attribute not found")
 
@@ -174,10 +178,10 @@ async def delete_attribute(uuid: str, current_user: dict = Depends(require_admin
 
 # ✅ Stats (optional)
 @router.get("/stats/overview")
-async def attribute_stats(current_user: dict = Depends(require_staff)):
+async def attribute_stats(current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **org_filter(scope)}},
         {"$group": {"_id": {"group": "$group", "type": "$type"}, "count": {"$count": {}}}},
     ]
     data = await db.attributes.aggregate(pipeline).to_list(None)
@@ -210,7 +214,7 @@ CATEGORY_GROUPS = {
 
 
 @router.get("/by-type/{stone_type}")
-async def get_categories_by_type(stone_type: str, current_user: dict = Depends(require_staff)):
+async def get_categories_by_type(stone_type: str, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     print(stone_type)
 
@@ -222,7 +226,7 @@ async def get_categories_by_type(stone_type: str, current_user: dict = Depends(r
 
     for group in CATEGORY_GROUPS[stone_type]:
         docs = await db.attributes.find(
-            {"group": stone_type, "type": group, "is_deleted": False}
+            {"group": stone_type, "type": group, "is_deleted": False, **org_filter(scope)}
         ).to_list(None)
         result[group] = [
             serialize_attribute(doc) for doc in docs

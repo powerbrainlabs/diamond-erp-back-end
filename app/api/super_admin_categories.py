@@ -4,7 +4,7 @@ from datetime import datetime
 import uuid
 import copy
 
-from ..core.dependencies import require_super_admin
+from ..core.dependencies import require_super_admin, get_org_scope, org_filter
 from ..db.database import get_db
 from ..schemas.category_schema import (
     CategorySchemaCreate,
@@ -52,20 +52,22 @@ def serialize_schema(doc: dict) -> dict:
 async def create_category_schema(
     payload: CategorySchemaCreate,
     current_user: dict = Depends(require_super_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
 
-    # Validate group against certificate_types
+    # Validate group against certificate_types (within the same organization)
     type_doc = await db.certificate_types.find_one({
-        "slug": payload.group, "is_deleted": False, "is_active": True,
+        "slug": payload.group, "is_deleted": False, "is_active": True, **org_filter(scope),
     })
     if not type_doc:
         raise HTTPException(status_code=400, detail=f"Invalid certificate type: {payload.group}")
 
-    # Duplicate name check
+    # Duplicate name check (scoped to organization)
     existing = await db.category_schemas.find_one({
         "name": {"$regex": f"^{payload.name}$", "$options": "i"},
         "is_deleted": False,
+        **org_filter(scope),
     })
     if existing:
         raise HTTPException(status_code=409, detail="A category with this name already exists")
@@ -76,6 +78,7 @@ async def create_category_schema(
 
     doc = {
         "uuid": str(uuid.uuid4()),
+        "organization_id": scope,
         "name": payload.name,
         "group": payload.group,
         "description": payload.description,
@@ -99,6 +102,7 @@ async def create_category_schema(
 @router.get("")
 async def list_category_schemas(
     current_user: dict = Depends(require_super_admin),
+    scope: Optional[str] = Depends(get_org_scope),
     group: Optional[str] = None,
     is_active: Optional[bool] = None,
     search: Optional[str] = None,
@@ -108,7 +112,7 @@ async def list_category_schemas(
     order: Literal["asc", "desc"] = "desc",
 ):
     db = await get_db()
-    filt: dict = {"is_deleted": False}
+    filt: dict = {"is_deleted": False, **org_filter(scope)}
 
     if group:
         filt["group"] = group
@@ -149,9 +153,10 @@ async def list_category_schemas(
 async def get_category_schema(
     schema_uuid: str,
     current_user: dict = Depends(require_super_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False})
+    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Category schema not found")
     return serialize_schema(doc)
@@ -163,9 +168,10 @@ async def update_category_schema(
     schema_uuid: str,
     payload: CategorySchemaUpdate,
     current_user: dict = Depends(require_super_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False})
+    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Category schema not found")
 
@@ -188,9 +194,10 @@ async def update_category_schema(
 async def delete_category_schema(
     schema_uuid: str,
     current_user: dict = Depends(require_super_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False})
+    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Category schema not found")
 
@@ -207,9 +214,10 @@ async def replace_fields(
     schema_uuid: str,
     payload: FieldsReplacePayload,
     current_user: dict = Depends(require_super_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False})
+    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Category schema not found")
 
@@ -234,9 +242,10 @@ async def reorder_fields(
     schema_uuid: str,
     payload: ReorderPayload,
     current_user: dict = Depends(require_super_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False})
+    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Category schema not found")
 
@@ -268,9 +277,10 @@ async def reorder_fields(
 async def duplicate_category_schema(
     schema_uuid: str,
     current_user: dict = Depends(require_super_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False})
+    doc = await db.category_schemas.find_one({"uuid": schema_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Category schema not found")
 
@@ -281,6 +291,7 @@ async def duplicate_category_schema(
 
     new_doc = {
         "uuid": str(uuid.uuid4()),
+        "organization_id": doc.get("organization_id"),
         "name": f"{doc['name']} (Copy)",
         "group": doc["group"],
         "description": doc.get("description"),

@@ -6,7 +6,7 @@ from jose import JWTError, jwt
 from bson import ObjectId
 
 from ..schemas.auth import RegisterRequest, TokenResponse, MeUpdate, ChangePasswordRequest, RefreshRequest
-from ..core.dependencies import get_current_user, require_admin
+from ..core.dependencies import get_current_user, require_admin, with_organization
 from ..core.security import hash_password, verify_password, create_access_token, create_refresh_token, blacklist_token
 from ..core.config import settings
 from ..db.database import get_db
@@ -69,7 +69,7 @@ async def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = 
         access_token=access["token"],
         refresh_token=refresh["token"],
         expires_in=int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds()),
-        user=dump_user(user),
+        user=await with_organization(dump_user(user)),
     )
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -91,7 +91,7 @@ async def refresh_token(payload: RefreshRequest):
         access_token=access["token"],
         refresh_token=refresh["token"],
         expires_in=int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds()),
-        user=dump_user(user),
+        user=await with_organization(dump_user(user)),
     )
 
 @router.get("/me")

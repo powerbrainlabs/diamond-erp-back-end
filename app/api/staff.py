@@ -4,7 +4,7 @@ from typing import Optional, Literal, List
 from datetime import datetime
 from bson import ObjectId
 
-from ..core.dependencies import require_admin
+from ..core.dependencies import require_admin, get_org_scope, org_filter
 from ..core.security import hash_password, verify_password
 from ..db.database import get_db
 from ..utils.serializers import dump_user
@@ -38,16 +38,17 @@ class StaffUpdate(BaseModel):
 async def create_staff(
     payload: StaffCreate,
     current_user: dict = Depends(require_admin),
+    scope: Optional[str] = Depends(get_org_scope),
     _: None = Depends(auto_log_action),  # Automatic logging
 ):
     """Create a new staff member (admin only)"""
     db = await get_db()
-    
-    # Check if email already exists
+
+    # Check if email already exists (email is globally unique)
     existing = await db.users.find_one({"email": payload.email})
     if existing:
         raise HTTPException(status_code=409, detail="Email already exists")
-    
+
     now = datetime.utcnow()
     # Validate features
     valid_features = [f for f in (payload.features or []) if f in AVAILABLE_FEATURES]
@@ -56,6 +57,7 @@ async def create_staff(
         "password": hash_password(payload.password),
         "name": payload.name,
         "role": payload.role,
+        "organization_id": scope,
         "features": valid_features,
         "is_active": True,
         "created_at": now,
@@ -73,6 +75,7 @@ async def create_staff(
 @router.get("")
 async def list_staff(
     current_user: dict = Depends(require_admin),
+    scope: Optional[str] = Depends(get_org_scope),
     search: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
@@ -81,8 +84,8 @@ async def list_staff(
 ):
     """List all staff members and admins (admin only)"""
     db = await get_db()
-    
-    query = {"role": {"$in": ["user", "admin"]}}
+
+    query = {"role": {"$in": ["user", "admin"]}, **org_filter(scope)}
     
     if search:
         query["$or"] = [
@@ -115,13 +118,14 @@ async def list_staff(
 @router.get("/{staff_id}")
 async def get_staff(
     staff_id: str,
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(require_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     """Get a single staff member or admin by ID (admin only)"""
     db = await get_db()
-    
+
     try:
-        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}})
+        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}, **org_filter(scope)})
     except:
         raise HTTPException(status_code=400, detail="Invalid staff ID")
     
@@ -135,13 +139,14 @@ async def update_staff(
     staff_id: str,
     payload: StaffUpdate,
     current_user: dict = Depends(require_admin),
+    scope: Optional[str] = Depends(get_org_scope),
     _: None = Depends(auto_log_action),  # Automatic logging
 ):
     """Update a staff member or admin (admin only)"""
     db = await get_db()
-    
+
     try:
-        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}})
+        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}, **org_filter(scope)})
     except:
         raise HTTPException(status_code=400, detail="Invalid staff ID")
     
@@ -181,13 +186,14 @@ async def update_staff(
 async def delete_staff(
     staff_id: str,
     current_user: dict = Depends(require_admin),
+    scope: Optional[str] = Depends(get_org_scope),
     _: None = Depends(auto_log_action),  # Automatic logging
 ):
     """Delete (deactivate) a staff member or admin (admin only)"""
     db = await get_db()
-    
+
     try:
-        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}})
+        doc = await db.users.find_one({"_id": ObjectId(staff_id), "role": {"$in": ["user", "admin"]}, **org_filter(scope)})
     except:
         raise HTTPException(status_code=400, detail="Invalid staff ID")
     

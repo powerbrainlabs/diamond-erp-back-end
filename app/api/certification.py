@@ -11,9 +11,9 @@ from pydantic import BaseModel
 from ..core.minio_client import minio_client
 from ..core.minio_client import CopySource
 from ..db.database import get_db
-from ..core.dependencies import require_staff
+from ..core.dependencies import require_staff, get_org_scope, org_filter
 from ..utils.minio_helpers import get_presigned_url
-from ..utils.serializers import serialize_mongo_doc
+from ..utils.serializers import serialize_mongo_doc, dump_organization
 from ..utils.cert_numbering import next_certificate_number
 from ..utils.template_renderer import render_description_template
 
@@ -115,21 +115,22 @@ class CertificationCreate(BaseModel):
 @router.post("", status_code=201)
 async def create_certification(
     payload: CertificationCreate,
-    #   current_user: dict = Depends(require_staff)
+    current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
 
     print(f"📝 Creating certification with payload: type={payload.type}, client_id={payload.client_id}")
     print(f"📸 File IDs - photo: {payload.photo_file_id}, logo: {payload.logo_file_id}, rear_logo: {payload.rear_logo_file_id}")
 
-    client = await db.clients.find_one({"uuid": payload.client_id, "is_deleted": False})
+    client = await db.clients.find_one({"uuid": payload.client_id, "is_deleted": False, **org_filter(scope)})
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
     # Validate fields against category schema if provided
     if payload.category_id:
         schema = await db.category_schemas.find_one({
-            "uuid": payload.category_id, "is_deleted": False, "is_active": True,
+            "uuid": payload.category_id, "is_deleted": False, "is_active": True, **org_filter(scope),
         })
         if not schema:
             raise HTTPException(status_code=400, detail="Invalid category schema")
@@ -148,7 +149,7 @@ async def create_certification(
     try:
         if payload.gallery_photo_uuid:
             # Use a photo from the job-photos gallery — copy to certificates bucket
-            gallery_doc = await db.job_photos.find_one({"uuid": payload.gallery_photo_uuid, "is_deleted": False})
+            gallery_doc = await db.job_photos.find_one({"uuid": payload.gallery_photo_uuid, "is_deleted": False, **org_filter(scope)})
             if not gallery_doc:
                 raise HTTPException(status_code=404, detail="Gallery photo not found")
             src_file_id = gallery_doc["file_id"]
@@ -203,6 +204,7 @@ async def create_certification(
     now = datetime.utcnow()
     doc = {
         "uuid": str(uuid.uuid4()),
+        "organization_id": scope,
         "certificate_number": certificate_number,
         "type": payload.type,
         "client_id": payload.client_id,
@@ -239,7 +241,11 @@ async def create_certification(
 
 # 🧱 Bulk Create
 @router.post("/bulk", status_code=201)
-async def create_bulk_certifications(payload: List[Dict[str, Any]]):
+async def create_bulk_certifications(
+    payload: List[Dict[str, Any]],
+    current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
+):
     db = await get_db()
     now = datetime.utcnow()
     inserted_docs = []
@@ -248,7 +254,7 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
     try:
         for cert in payload:
             # Validate type & client
-            client = await db.clients.find_one({"uuid": cert["client_id"], "is_deleted": False})
+            client = await db.clients.find_one({"uuid": cert["client_id"], "is_deleted": False, **org_filter(scope)})
             if not client:
                 raise HTTPException(status_code=404, detail=f"Client {cert['client_id']} not found")
 
@@ -265,6 +271,7 @@ async def create_bulk_certifications(payload: List[Dict[str, Any]]):
 
             inserted_docs.append({
                 "uuid": str(uuid.uuid4()),
+                "organization_id": scope,
                 "certificate_number": certificate_number,
                 "type": cert["type"],
                 "client_id": cert["client_id"],
@@ -345,16 +352,16 @@ class CertificationUpdate(BaseModel):
 
 
 @router.put("/{cert_uuid}")
-async def update_certification(cert_uuid: str, payload: CertificationUpdate):
+async def update_certification(cert_uuid: str, payload: CertificationUpdate, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.certifications.find_one({"uuid": cert_uuid, "is_deleted": False})
+    doc = await db.certifications.find_one({"uuid": cert_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Certificate not found")
 
     updates: Dict[str, Any] = {"updated_at": datetime.utcnow()}
 
     if payload.client_id is not None:
-        client = await db.clients.find_one({"uuid": payload.client_id, "is_deleted": False})
+        client = await db.clients.find_one({"uuid": payload.client_id, "is_deleted": False, **org_filter(scope)})
         if not client:
             raise HTTPException(status_code=404, detail="Client not found")
         updates["client_id"] = payload.client_id
@@ -369,7 +376,7 @@ async def update_certification(cert_uuid: str, payload: CertificationUpdate):
     if payload.remove_photo:
         updates["photo_url"] = None
     elif payload.gallery_photo_uuid:
-        gallery_doc = await db.job_photos.find_one({"uuid": payload.gallery_photo_uuid, "is_deleted": False})
+        gallery_doc = await db.job_photos.find_one({"uuid": payload.gallery_photo_uuid, "is_deleted": False, **org_filter(scope)})
         if not gallery_doc:
             raise HTTPException(status_code=404, detail="Gallery photo not found")
         src_file_id = gallery_doc["file_id"]
@@ -392,7 +399,7 @@ async def update_certification(cert_uuid: str, payload: CertificationUpdate):
     elif payload.rear_logo_file_id:
         updates["rear_brand_logo_url"] = promote_file_from_temp(payload.rear_logo_file_id)
 
-    await db.certifications.update_one({"uuid": cert_uuid}, {"$set": updates})
+    await db.certifications.update_one({"uuid": cert_uuid, **org_filter(scope)}, {"$set": updates})
     return {"detail": "Certificate updated"}
 
 
@@ -401,9 +408,9 @@ class BulkPublishPayload(BaseModel):
 
 
 @router.patch("/{cert_uuid}/reject")
-async def reject_certification(cert_uuid: str):
+async def reject_certification(cert_uuid: str, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.certifications.find_one({"uuid": cert_uuid, "is_deleted": False})
+    doc = await db.certifications.find_one({"uuid": cert_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Certificate not found")
     if not doc.get("is_published"):
@@ -413,7 +420,7 @@ async def reject_certification(cert_uuid: str):
 
     now = datetime.utcnow()
     await db.certifications.update_one(
-        {"uuid": cert_uuid, "is_deleted": False},
+        {"uuid": cert_uuid, "is_deleted": False, **org_filter(scope)},
         {
             "$set": {
                 "is_rejected": True,
@@ -426,7 +433,7 @@ async def reject_certification(cert_uuid: str):
 
 
 @router.patch("/publish")
-async def bulk_publish_certifications(payload: BulkPublishPayload):
+async def bulk_publish_certifications(payload: BulkPublishPayload, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     """
     Bulk publish certificates by UUID list.
     Previously published (non-history) certs are moved to history first,
@@ -437,15 +444,15 @@ async def bulk_publish_certifications(payload: BulkPublishPayload):
     db = await get_db()
     now = datetime.utcnow()
     rejected_count = await db.certifications.count_documents(
-        {"uuid": {"$in": payload.uuids}, "is_deleted": False, "is_rejected": True}
+        {"uuid": {"$in": payload.uuids}, "is_deleted": False, "is_rejected": True, **org_filter(scope)}
     )
-    # Move current published batch to history before publishing new batch
+    # Move current published batch to history before publishing new batch (org-scoped)
     await db.certifications.update_many(
-        {"is_published": True, "is_history": {"$ne": True}, "is_deleted": False},
+        {"is_published": True, "is_history": {"$ne": True}, "is_deleted": False, **org_filter(scope)},
         {"$set": {"is_history": True, "updated_at": now}},
     )
     result = await db.certifications.update_many(
-        {"uuid": {"$in": payload.uuids}, "is_deleted": False, "is_rejected": {"$ne": True}},
+        {"uuid": {"$in": payload.uuids}, "is_deleted": False, "is_rejected": {"$ne": True}, **org_filter(scope)},
         {"$set": {"is_published": True, "is_history": False, "published_at": now, "updated_at": now}},
     )
     detail = f"{result.modified_count} certificate(s) published"
@@ -460,6 +467,8 @@ async def bulk_publish_certifications(payload: BulkPublishPayload):
 
 @router.get("")
 async def list_certifications(
+    current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
     search: Optional[str] = None,
     type: Optional[str] = None,
     published: Optional[str] = None,
@@ -477,7 +486,7 @@ async def list_certifications(
     published param: "true" = only published, "false" = only drafts, "all" = everything
     """
     db = await get_db()
-    filt = {"is_deleted": False}
+    filt = {"is_deleted": False, **org_filter(scope)}
 
     # Filter by published state
     if published == "true":
@@ -501,7 +510,7 @@ async def list_certifications(
     # Search on certificate_number, type, fields, and client name
     if search:
         matching_clients = await db.clients.find(
-            {"name": {"$regex": search, "$options": "i"}, "is_deleted": False},
+            {"name": {"$regex": search, "$options": "i"}, "is_deleted": False, **org_filter(scope)},
             {"uuid": 1}
         ).to_list(length=200)
         matching_client_ids = [c["uuid"] for c in matching_clients]
@@ -583,12 +592,13 @@ async def list_certifications(
 # ✅ Form Schema: returns category schema fields for dynamic form rendering
 # Dynamically populates dropdown options from the attributes collection
 @router.get("/form-schema/{category_uuid}")
-async def get_form_schema(category_uuid: str):
+async def get_form_schema(category_uuid: str, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     schema = await db.category_schemas.find_one({
         "uuid": category_uuid,
         "is_deleted": False,
         "is_active": True,
+        **org_filter(scope),
     })
     if not schema:
         raise HTTPException(status_code=404, detail="Category schema not found")
@@ -608,7 +618,8 @@ async def get_form_schema(category_uuid: str):
             cursor = db.attributes.find({
                 "group": group,
                 "type": field_type_key,
-                "is_deleted": False
+                "is_deleted": False,
+                **org_filter(scope),
             }).sort([("name", 1)])
 
             attrs = [doc async for doc in cursor]
@@ -635,9 +646,9 @@ async def get_form_schema(category_uuid: str):
 
 # ✅ Active category schemas list (for certificate form dropdown)
 @router.get("/available-schemas")
-async def list_available_schemas(group: Optional[str] = None):
+async def list_available_schemas(group: Optional[str] = None, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    filt = {"is_deleted": False, "is_active": True}
+    filt = {"is_deleted": False, "is_active": True, **org_filter(scope)}
     if group:
         filt["group"] = group
     cursor = db.category_schemas.find(filt).sort([("name", 1)])
@@ -654,10 +665,10 @@ async def list_available_schemas(group: Optional[str] = None):
 
 # ✅ Stats: Overview
 @router.get("/stats")
-async def certification_stats(current_user: dict = Depends(require_staff)):
+async def certification_stats(current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **org_filter(scope)}},
         {"$group": {"_id": "$type", "count": {"$count": {}}}}
     ]
     res = await db.certifications.aggregate(pipeline).to_list(None)
@@ -670,10 +681,10 @@ async def certification_stats(current_user: dict = Depends(require_staff)):
 
 # ✅ Stats: Daily
 @router.get("/stats/daily")
-async def certification_stats_daily(current_user: dict = Depends(require_staff)):
+async def certification_stats_daily(current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **org_filter(scope)}},
         {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$count": {}}}},
         {"$sort": {"_id": 1}},
     ]
@@ -710,6 +721,12 @@ async def get_certification(uuid: str):
         "name": client["name"]
     } if client else None
 
+    # Join with organization (for per-tenant branding on the public view)
+    if doc.get("organization_id"):
+        org = await db.organizations.find_one({"uuid": doc["organization_id"]})
+        if org:
+            doc["organization"] = dump_organization(org)
+
     # Join with category schema (for field definitions and labels)
     if doc.get("category_id"):
         schema = await db.category_schemas.find_one({
@@ -736,14 +753,15 @@ async def get_certification(uuid: str):
 
 # ✅ Delete Certificate
 @router.delete("/{uuid}")
-async def delete_certification(uuid: str):
+async def delete_certification(uuid: str, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     """
     Soft delete a certification by marking it as deleted.
     """
     db = await get_db()
     doc = await db.certifications.find_one({
         "uuid": uuid,
-        "is_deleted": False
+        "is_deleted": False,
+        **org_filter(scope),
     })
 
     if not doc:
@@ -751,7 +769,7 @@ async def delete_certification(uuid: str):
 
     # Soft delete by marking as_deleted
     await db.certifications.update_one(
-        {"uuid": uuid},
+        {"uuid": uuid, **org_filter(scope)},
         {
             "$set": {
                 "is_deleted": True,
@@ -768,7 +786,7 @@ class DownloadPdfPayload(BaseModel):
 
 
 @router.post("/download-pdf")
-async def download_certificates_pdf(payload: DownloadPdfPayload):
+async def download_certificates_pdf(payload: DownloadPdfPayload, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     if not payload.uuids:
         raise HTTPException(status_code=400, detail="No certificates selected")
 
@@ -776,7 +794,7 @@ async def download_certificates_pdf(payload: DownloadPdfPayload):
 
     db = await get_db()
     raw_docs = await db.certifications.find(
-        {"uuid": {"$in": payload.uuids}, "is_deleted": False}
+        {"uuid": {"$in": payload.uuids}, "is_deleted": False, **org_filter(scope)}
     ).to_list(length=len(payload.uuids))
 
     if not raw_docs:
@@ -821,8 +839,15 @@ async def download_certificates_pdf(payload: DownloadPdfPayload):
     if not certs:
         raise HTTPException(status_code=404, detail="No matching certificates found")
 
+    # Resolve each certificate's organization for per-org branding/templates.
+    org_ids = {c.get("organization_id") for c in certs if c.get("organization_id")}
+    org_map = {}
+    if org_ids:
+        org_docs = await db.organizations.find({"uuid": {"$in": list(org_ids)}}).to_list(length=len(org_ids))
+        org_map = {org["uuid"]: serialize_mongo_doc(org) for org in org_docs}
+
     try:
-        pdf_bytes = await generate_certificates_pdf_async(certs)
+        pdf_bytes = await generate_certificates_pdf_async(certs, org_map=org_map)
     except Exception:
         logger.exception("PDF generation failed")
         raise HTTPException(status_code=500, detail="Failed to generate PDF")

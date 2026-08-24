@@ -94,6 +94,25 @@ def dump_manufacturer(doc):
     }
 
 
+def dump_organization(doc) -> dict:
+    """Serialize an organization document for API output.
+
+    Exposes the persisted uuid as `id` (the frontend uses organization.id),
+    and never leaks Mongo _id or the internal header/card template blob.
+    """
+    if not doc:
+        return None
+    d = dict(doc)
+    d.pop("_id", None)
+    d["id"] = d.get("uuid")
+    for k, v in list(d.items()):
+        if isinstance(v, ObjectId):
+            d[k] = str(v)
+        elif isinstance(v, datetime):
+            d[k] = v.isoformat()
+    return d
+
+
 def dump_qc_report(doc) -> dict:
     d = dump_id(dict(doc))
     for k, v in list(d.items()):

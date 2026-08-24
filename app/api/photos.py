@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from ..core.minio_client import CopySource
 
 from ..db.database import get_db
-from ..core.dependencies import require_staff
+from ..core.dependencies import require_staff, get_org_scope, org_filter
 from ..core.minio_client import minio_client
 from ..utils.minio_helpers import get_presigned_url
 from ..utils.serializers import serialize_mongo_doc
@@ -86,10 +86,12 @@ def _make_doc(
     status: str,
     job_id: Optional[str] = None,
     job_number: Optional[str] = None,
+    organization_id: Optional[str] = None,
 ) -> dict:
     now = datetime.utcnow()
     return {
         "uuid": photo_uuid,
+        "organization_id": organization_id,
         "status": status,            # "draft" | "published"
         "job_id": job_id or "",
         "job_number": job_number or "",
@@ -115,6 +117,7 @@ def _make_doc(
 async def create_draft_photo(
     payload: PhotoCreateDraft,
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     """Create a draft photo without a job assignment."""
     db = await get_db()
@@ -134,6 +137,7 @@ async def create_draft_photo(
         description="",
         current_user=current_user,
         status="draft",
+        organization_id=scope,
     )
     await db.job_photos.insert_one(doc)
 
@@ -145,11 +149,12 @@ async def create_draft_photo(
 async def create_photo(
     payload: PhotoCreate,
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     """Legacy: create a published photo in one step."""
     db = await get_db()
 
-    job = await db.jobs.find_one({"uuid": payload.job_id, "is_deleted": False})
+    job = await db.jobs.find_one({"uuid": payload.job_id, "is_deleted": False, **org_filter(scope)})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -169,6 +174,7 @@ async def create_photo(
         status="published",
         job_id=payload.job_id,
         job_number=job.get("job_number", ""),
+        organization_id=scope,
     )
     await db.job_photos.insert_one(doc)
 
@@ -181,10 +187,11 @@ async def list_photos(
     job_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),  # "draft" | "published" | None (all)
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
 
-    query = {"is_deleted": False}
+    query = {"is_deleted": False, **org_filter(scope)}
     if job_id:
         query["job_id"] = job_id
     if status:
@@ -201,9 +208,10 @@ async def list_photos(
 async def get_photo(
     photo_uuid: str,
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.job_photos.find_one({"uuid": photo_uuid, "is_deleted": False})
+    doc = await db.job_photos.find_one({"uuid": photo_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Photo not found")
     result = serialize_mongo_doc(doc)
@@ -215,10 +223,11 @@ async def update_photo_file(
     photo_uuid: str,
     payload: PhotoUpdateFile,
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     """Replace a photo's stored image (after re-edit or BG removal)."""
     db = await get_db()
-    doc = await db.job_photos.find_one({"uuid": photo_uuid, "is_deleted": False})
+    doc = await db.job_photos.find_one({"uuid": photo_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Photo not found")
 
@@ -251,16 +260,17 @@ async def publish_photo(
     photo_uuid: str,
     payload: PhotoPublish,
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     """Promote a draft photo to published by assigning a job."""
     db = await get_db()
-    doc = await db.job_photos.find_one({"uuid": photo_uuid, "is_deleted": False})
+    doc = await db.job_photos.find_one({"uuid": photo_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Photo not found")
     if doc.get("status") == "published":
         raise HTTPException(status_code=400, detail="Photo is already published")
 
-    job = await db.jobs.find_one({"uuid": payload.job_id, "is_deleted": False})
+    job = await db.jobs.find_one({"uuid": payload.job_id, "is_deleted": False, **org_filter(scope)})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -286,9 +296,10 @@ async def update_photo(
     photo_uuid: str,
     payload: PhotoUpdate,
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.job_photos.find_one({"uuid": photo_uuid, "is_deleted": False})
+    doc = await db.job_photos.find_one({"uuid": photo_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Photo not found")
 
@@ -309,9 +320,10 @@ async def update_photo(
 async def delete_photo(
     photo_uuid: str,
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.job_photos.find_one({"uuid": photo_uuid, "is_deleted": False})
+    doc = await db.job_photos.find_one({"uuid": photo_uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Photo not found")
 

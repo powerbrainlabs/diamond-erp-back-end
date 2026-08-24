@@ -5,7 +5,7 @@ import uuid
 
 from pydantic import BaseModel
 from ..db.database import get_db
-from ..core.dependencies import require_admin
+from ..core.dependencies import require_admin, require_staff, get_org_scope, org_filter
 from ..utils.serializers import dump_manufacturer
 
 router = APIRouter(prefix="/api/manufacturers", tags=["Manufacturers"])
@@ -33,12 +33,14 @@ class ManufacturerUpdate(BaseModel):
 @router.post("", status_code=201)
 async def create_manufacturer(
     payload: ManufacturerCreate,
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(require_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
 
     doc = {
         "uuid": str(uuid.uuid4()),
+        "organization_id": scope,
         "name": payload.name,
         "contact_person": payload.contact_person,
         "email": payload.email,
@@ -57,6 +59,8 @@ async def create_manufacturer(
 # ✅ List Manufacturers
 @router.get("")
 async def list_manufacturers(
+    current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
     search: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
@@ -67,7 +71,7 @@ async def list_manufacturers(
     Fetch paginated manufacturers with optional search.
     """
     db = await get_db()
-    filt = {"is_deleted": False}
+    filt = {"is_deleted": False, **org_filter(scope)}
 
     if search:
         filt["$or"] = [
@@ -105,19 +109,20 @@ async def list_manufacturers(
 
 # ✅ Get Stats (MUST be before /{uuid} to avoid route conflict)
 @router.get("/stats")
-async def manufacturer_stats():
+async def manufacturer_stats(current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    total = await db.manufacturers.count_documents({"is_deleted": False})
+    total = await db.manufacturers.count_documents({"is_deleted": False, **org_filter(scope)})
     return {"total": total}
 
 
 # ✅ Get Single Manufacturer
 @router.get("/{uuid}")
-async def get_manufacturer(uuid: str):
+async def get_manufacturer(uuid: str, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     doc = await db.manufacturers.find_one({
         "uuid": uuid,
-        "is_deleted": False
+        "is_deleted": False,
+        **org_filter(scope),
     })
 
     if not doc:
@@ -131,12 +136,14 @@ async def get_manufacturer(uuid: str):
 async def update_manufacturer(
     uuid: str,
     payload: ManufacturerUpdate,
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(require_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
     doc = await db.manufacturers.find_one({
         "uuid": uuid,
-        "is_deleted": False
+        "is_deleted": False,
+        **org_filter(scope),
     })
 
     if not doc:
@@ -149,9 +156,9 @@ async def update_manufacturer(
             updates[field] = val
 
     updates["updated_at"] = datetime.utcnow()
-    await db.manufacturers.update_one({"uuid": uuid}, {"$set": updates})
+    await db.manufacturers.update_one({"_id": doc["_id"]}, {"$set": updates})
 
-    fresh = await db.manufacturers.find_one({"uuid": uuid})
+    fresh = await db.manufacturers.find_one({"_id": doc["_id"]})
     return dump_manufacturer(fresh)
 
 
@@ -159,19 +166,21 @@ async def update_manufacturer(
 @router.delete("/{uuid}")
 async def delete_manufacturer(
     uuid: str,
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(require_admin),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
     doc = await db.manufacturers.find_one({
         "uuid": uuid,
-        "is_deleted": False
+        "is_deleted": False,
+        **org_filter(scope),
     })
 
     if not doc:
         raise HTTPException(status_code=404, detail="Manufacturer not found")
 
     await db.manufacturers.update_one(
-        {"uuid": uuid},
+        {"_id": doc["_id"]},
         {
             "$set": {
                 "is_deleted": True,

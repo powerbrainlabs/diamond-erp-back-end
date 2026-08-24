@@ -173,8 +173,8 @@ def _storage_ref_to_b64(storage_ref: str) -> Optional[str]:
         return None
 
 
-async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
-    """Fetch all cert images concurrently and return url→base64 map."""
+async def _prefetch_images(certs: List[Dict[str, Any]], org_map: Dict[str, Any] = {}) -> Dict[str, str]:
+    """Fetch all cert (and org branding) images concurrently and return url→base64 map."""
     urls = set()
     for cert in certs:
         for key in ('photo_signed_url', 'brand_logo_signed_url', 'rear_brand_logo_signed_url'):
@@ -185,15 +185,74 @@ async def _prefetch_images(certs: List[Dict[str, Any]]) -> Dict[str, str]:
         if cert.get('uuid'):
             urls.add(_fallback_qr_url(cert["uuid"]))
 
+    # Org branding images referenced by custom header templates.
+    for org in (org_map or {}).values():
+        for key in ('logo_url', 'card_logo_url'):
+            url = (org or {}).get(key)
+            if url and url.startswith(('http://', 'https://')):
+                urls.add(url)
+
     results = await asyncio.gather(*[_fetch_as_b64(url) for url in urls])
     return {url: b64 for url, b64 in zip(urls, results) if b64}
 
 
-def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> str:
+def _render_card_header(
+    org: Dict[str, Any],
+    brand_logo_html: str,
+    qr_html: str,
+    brand_logo_url: str,
+    qr_url: str,
+    img_map: Dict[str, str],
+) -> str:
+    """Render the card header.
+
+    If the organization has a saved header template, substitute its placeholders
+    and use it. Otherwise fall back to the standard GAC header so existing
+    (default-org) certificates render exactly as before.
+    """
+    template = (org or {}).get('header_template') or {}
+    header_html = template.get('html')
+    if header_html:
+        org_logo = img_map.get(org.get('logo_url') or '') or (org.get('logo_url') or '')
+        card_logo = img_map.get(org.get('card_logo_url') or '') or (org.get('card_logo_url') or '')
+        brand_logo_src = brand_logo_url or card_logo
+        replacements = {
+            '{{ORG_LOGO}}': _esc(org_logo),
+            '{{ORG_NAME}}': _esc(_normalize_display_text(org.get('display_name') or org.get('official_name') or '')),
+            '{{ORG_WEBSITE}}': _esc(org.get('website') or ''),
+            '{{BRAND_LOGO}}': _esc(brand_logo_src),
+            '{{QR_CODE}}': _esc(qr_url or ''),
+        }
+        for token, value in replacements.items():
+            header_html = header_html.replace(token, value)
+        return f'<header class="card-header org-custom-header">{header_html}</header>'
+
+    return f'''<header class="card-header">
+    <img src="{GAC_HEADER_B64}" class="gac-header-img" alt="GAC">
+    <div class="header-right">
+      {brand_logo_html}
+      {qr_html}
+    </div>
+  </header>'''
+
+
+def _render_card_footer(org: Dict[str, Any]) -> str:
+    """Render the card footer, preferring the organization's custom footer text."""
+    footer_text = (org or {}).get('certificate_footer_text')
+    website = (org or {}).get('website')
+    if footer_text:
+        return f'<div class="card-footer">{_esc(_normalize_display_text(footer_text))}</div>'
+    if website:
+        return f'<div class="card-footer">For further information visit <b>{_esc(website)}</b></div>'
+    return '<div class="card-footer">For further information visit <b>www.thegac.in</b></div>'
+
+
+def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}, org_map: Dict[str, Any] = {}) -> str:
     fields = cert.get('fields') or {}
     schema = cert.get('schema') or {}
     cert_type = cert.get('type', '')
     group = schema.get('group', '')
+    org = (org_map or {}).get(cert.get('organization_id')) or {}
 
     photo_url = (
         _storage_ref_to_b64(cert.get('photo_url') or '')
@@ -203,6 +262,8 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     brand_logo_url = (
         _storage_ref_to_b64(cert.get('brand_logo_url') or '')
         or img_map.get(cert.get('brand_logo_signed_url') or '')
+        or _storage_ref_to_b64(org.get('card_logo_url') or '')
+        or img_map.get(org.get('card_logo_url') or '')
         or ''
     )
     qr_url = img_map.get(_fallback_qr_url(cert['uuid'])) or _fallback_qr_url(cert['uuid']) if cert.get('uuid') else ''
@@ -357,15 +418,12 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
     row_count = max(visual_row_count, rows_html.count('field-row'))
     density_style = 'font-size:0.62em;line-height:10.8px;'
 
+    header_html = _render_card_header(org, brand_logo_html, qr_html, brand_logo_url, qr_url, img_map)
+    footer_html = _render_card_footer(org)
+
     return f'''
 <div class="cert-card" data-cert-uuid="{_esc(cert.get('uuid',''))}" data-row-count="{row_count}">
-  <header class="card-header">
-    <img src="{GAC_HEADER_B64}" class="gac-header-img" alt="GAC">
-    <div class="header-right">
-      {brand_logo_html}
-      {qr_html}
-    </div>
-  </header>
+  {header_html}
   {photo_html}
   <div class="card-body">
     <div class="cert-title">CERTIFICATE OF AUTHENTICITY</div>
@@ -377,7 +435,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
         {rows_html}
       </div>
     </div>
-    <div class="card-footer">For further information visit <b>www.thegac.in</b></div>
+    {footer_html}
   </div>
 </div>'''
 
@@ -827,7 +885,19 @@ FIT_SCRIPT = """
 """
 
 
-def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, include_back: bool = True) -> str:
+def _collect_org_css(org_map: Dict[str, Any]) -> str:
+    """Concatenate the CSS from every org's header template (deduped)."""
+    seen = set()
+    css_parts = []
+    for org in (org_map or {}).values():
+        css = ((org or {}).get('header_template') or {}).get('css')
+        if css and css not in seen:
+            seen.add(css)
+            css_parts.append(css)
+    return "\n".join(css_parts)
+
+
+def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, include_back: bool = True, org_map: Dict[str, Any] = {}) -> str:
     CARDS_PER_PAGE = 10
 
     pages_html = ''
@@ -837,7 +907,7 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
         front_rows = []
         for i in range(0, len(chunk), 2):
             row = chunk[i:i + 2]
-            row_html = ''.join(_render_card_front(c, img_map) for c in row)
+            row_html = ''.join(_render_card_front(c, img_map, org_map) for c in row)
             front_rows.append(f'<div class="print-row">{row_html}</div>')
         pages_html += f'<div class="page"><div class="print-grid">{"".join(front_rows)}</div></div>'
 
@@ -852,11 +922,14 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
                 back_rows.append(f'<div class="print-row">{row_html}</div>')
             pages_html += f'<div class="page"><div class="print-grid">{"".join(back_rows)}</div></div>'
 
+    org_css = _collect_org_css(org_map)
+
     return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <style>{CSS}</style>
+<style>{org_css}</style>
 </head>
 <body>
 {pages_html}
@@ -883,11 +956,12 @@ def _render_pdf_sync(html: str) -> bytes:
     return pdf_bytes
 
 
-async def generate_certificates_pdf_async(certs: List[Dict[str, Any]]) -> bytes:
-    img_map = await _prefetch_images(certs)
-    html = _build_html(certs, img_map)
+async def generate_certificates_pdf_async(certs: List[Dict[str, Any]], org_map: Dict[str, Any] = None) -> bytes:
+    org_map = org_map or {}
+    img_map = await _prefetch_images(certs, org_map)
+    html = _build_html(certs, img_map, org_map=org_map)
     return await asyncio.to_thread(_render_pdf_sync, html)
 
 
-def generate_certificates_pdf(certs: List[Dict[str, Any]]) -> bytes:
-    return asyncio.run(generate_certificates_pdf_async(certs))
+def generate_certificates_pdf(certs: List[Dict[str, Any]], org_map: Dict[str, Any] = None) -> bytes:
+    return asyncio.run(generate_certificates_pdf_async(certs, org_map=org_map))

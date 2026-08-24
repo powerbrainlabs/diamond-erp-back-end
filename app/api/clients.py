@@ -5,7 +5,7 @@ import uuid
 from bson import ObjectId
 from pydantic import BaseModel
 
-from ..core.dependencies import require_admin, require_staff
+from ..core.dependencies import require_admin, require_staff, get_org_scope, org_filter
 from ..db.database import get_db
 from ..schemas.client import ClientCreate, ClientUpdate
 from ..utils.serializers import dump_client
@@ -17,22 +17,23 @@ ALLOWED_SORTS = {"created_at": "created_at", "name": "name"}
 
 # ✅ Create Client
 @router.post("", status_code=201)
-async def create_client(payload: ClientCreate, current_user: dict = Depends(require_staff)):
+async def create_client(payload: ClientCreate, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
 
-    # Check duplicate (email or phone)
+    # Check duplicate (email or phone) — scoped to the organization
     if payload.email:
-        existing = await db.clients.find_one({"email": payload.email, "is_deleted": False})
+        existing = await db.clients.find_one({"email": payload.email, "is_deleted": False, **org_filter(scope)})
         if existing:
             raise HTTPException(status_code=409, detail="Email already exists")
     if payload.phone:
-        existing = await db.clients.find_one({"phone": payload.phone, "is_deleted": False})
+        existing = await db.clients.find_one({"phone": payload.phone, "is_deleted": False, **org_filter(scope)})
         if existing:
             raise HTTPException(status_code=409, detail="Phone already exists")
 
     now = datetime.utcnow()
     doc = {
         "uuid": str(uuid.uuid4()),
+        "organization_id": scope,
         "name": payload.name,
         "contact_person": payload.contact_person,
         "email": payload.email,
@@ -58,6 +59,7 @@ async def create_client(payload: ClientCreate, current_user: dict = Depends(requ
 @router.get("")
 async def list_clients(
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
     search: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
@@ -65,7 +67,7 @@ async def list_clients(
     order: Literal["asc", "desc"] = "desc",
 ):
     db = await get_db()
-    filt = {"is_deleted": False}
+    filt = {"is_deleted": False, **org_filter(scope)}
 
     if search:
         filt["$or"] = [
@@ -96,10 +98,10 @@ async def list_clients(
 
 # ✅ Client Stats (MUST be before /{uuid} to avoid route conflict)
 @router.get("/stats")
-async def client_stats(current_user: dict = Depends(require_staff)):
+async def client_stats(current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **org_filter(scope)}},
         {"$group": {"_id": None, "total_clients": {"$count": {}}}},
     ]
     res = await db.clients.aggregate(pipeline).to_list(1)
@@ -109,9 +111,9 @@ async def client_stats(current_user: dict = Depends(require_staff)):
 
 # ✅ Get Single Client
 @router.get("/{uuid}")
-async def get_client(uuid: str, current_user: dict = Depends(require_staff)):
+async def get_client(uuid: str, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Client not found")
     return dump_client(doc)
@@ -119,9 +121,9 @@ async def get_client(uuid: str, current_user: dict = Depends(require_staff)):
 
 # ✅ Update Client
 @router.put("/{uuid}")
-async def update_client(uuid: str, payload: ClientUpdate, current_user: dict = Depends(require_staff)):
+async def update_client(uuid: str, payload: ClientUpdate, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -164,9 +166,9 @@ def _promote_logo(file_id: str, old_url: Optional[str] = None) -> str:
 
 
 @router.put("/{uuid}/logos")
-async def update_client_logos(uuid: str, payload: ClientLogosUpdate, current_user: dict = Depends(require_staff)):
+async def update_client_logos(uuid: str, payload: ClientLogosUpdate, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -186,9 +188,9 @@ async def update_client_logos(uuid: str, payload: ClientLogosUpdate, current_use
 
 # ✅ Soft Delete Client
 @router.delete("/{uuid}")
-async def delete_client(uuid: str, current_user: dict = Depends(require_admin)):
+async def delete_client(uuid: str, current_user: dict = Depends(require_admin), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.clients.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Client not found")
     await db.clients.update_one(

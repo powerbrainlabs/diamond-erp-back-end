@@ -5,7 +5,7 @@ from bson import ObjectId
 import uuid
 
 from ..schemas.qc_report import QCReportCreate, QCReportUpdate
-from ..core.dependencies import require_staff
+from ..core.dependencies import require_staff, get_org_scope, org_filter
 from ..db.database import get_db
 from ..utils.serializers import dump_qc_report
 
@@ -13,11 +13,11 @@ router = APIRouter(prefix="/api/reports/qc", tags=["QC Reports"])
 
 # ✅ Create QC Report
 @router.post("", status_code=201)
-async def create_qc_report(payload: QCReportCreate, current_user: dict = Depends(require_staff)):
+async def create_qc_report(payload: QCReportCreate, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    
+
     # Validate job exists
-    job = await db.jobs.find_one({"uuid": payload.job_id, "is_deleted": False})
+    job = await db.jobs.find_one({"uuid": payload.job_id, "is_deleted": False, **org_filter(scope)})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
@@ -29,7 +29,7 @@ async def create_qc_report(payload: QCReportCreate, current_user: dict = Depends
     
     # Find the last report number for today
     last_report = await db.qc_reports.find_one(
-        {"ocr_no": {"$regex": f"^OCR-{date_prefix}-"}},
+        {"ocr_no": {"$regex": f"^OCR-{date_prefix}-"}, **org_filter(scope)},
         sort=[("created_at", -1)]
     )
     
@@ -49,6 +49,7 @@ async def create_qc_report(payload: QCReportCreate, current_user: dict = Depends
     
     doc = {
         "uuid": str(uuid.uuid4()),
+        "organization_id": scope,
         "job_id": payload.job_id,
         "ocr_no": ocr_no,
         "clientname": payload.clientname,
@@ -77,14 +78,15 @@ async def create_qc_report(payload: QCReportCreate, current_user: dict = Depends
 @router.get("")
 async def list_qc_reports(
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
     job_id: Optional[str] = None,
     status: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
 ):
     db = await get_db()
-    filt = {"is_deleted": False}
-    
+    filt = {"is_deleted": False, **org_filter(scope)}
+
     if job_id:
         filt["job_id"] = job_id
     if status:
@@ -108,18 +110,18 @@ async def list_qc_reports(
 
 # ✅ Get Single QC Report
 @router.get("/{uuid}")
-async def get_qc_report(uuid: str, current_user: dict = Depends(require_staff)):
+async def get_qc_report(uuid: str, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.qc_reports.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.qc_reports.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="QC Report not found")
     return dump_qc_report(doc)
 
 # ✅ Update QC Report
 @router.put("/{uuid}")
-async def update_qc_report(uuid: str, payload: QCReportUpdate, current_user: dict = Depends(require_staff)):
+async def update_qc_report(uuid: str, payload: QCReportUpdate, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.qc_reports.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.qc_reports.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="QC Report not found")
     
@@ -140,9 +142,9 @@ async def update_qc_report(uuid: str, payload: QCReportUpdate, current_user: dic
 
 # ✅ Delete QC Report
 @router.delete("/{uuid}")
-async def delete_qc_report(uuid: str, current_user: dict = Depends(require_staff)):
+async def delete_qc_report(uuid: str, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.qc_reports.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.qc_reports.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="QC Report not found")
     
@@ -155,10 +157,10 @@ async def delete_qc_report(uuid: str, current_user: dict = Depends(require_staff
 
 # ✅ Stats: Overview
 @router.get("/stats")
-async def qc_report_stats(current_user: dict = Depends(require_staff)):
+async def qc_report_stats(current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **org_filter(scope)}},
         {"$group": {"_id": "$status", "count": {"$count": {}}}}
     ]
     res = await db.qc_reports.aggregate(pipeline).to_list(None)
@@ -171,10 +173,10 @@ async def qc_report_stats(current_user: dict = Depends(require_staff)):
 
 # ✅ Stats
 @router.get("/stats/daily")
-async def qc_stats_daily(current_user: dict = Depends(require_staff)):
+async def qc_stats_daily(current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **org_filter(scope)}},
         {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$count": {}}}},
         {"$sort": {"_id": 1}},
     ]

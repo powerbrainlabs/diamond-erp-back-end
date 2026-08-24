@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
-from ..core.dependencies import require_staff
+from ..core.dependencies import require_staff, get_org_scope, org_filter
 from ..db.database import get_db
 
 router = APIRouter(prefix="/api/action-history", tags=["Action History"])
@@ -9,13 +9,14 @@ router = APIRouter(prefix="/api/action-history", tags=["Action History"])
 async def list_action_history(
     page: int = Query(1),
     limit: int = Query(10),
-    current_user: dict = Depends(require_staff)
+    current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    # In a real app, we'd have an 'actions' collection. 
+    # In a real app, we'd have an 'actions' collection.
     # For now, let's return an empty list or some mock data to avoid 404s.
-    
-    filt = {}
+
+    filt = {**org_filter(scope)}
     total = await db.actions.count_documents(filt) if hasattr(db, "actions") else 0
     
     # Mock data if no collection exists yet

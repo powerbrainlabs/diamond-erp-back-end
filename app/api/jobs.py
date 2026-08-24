@@ -6,7 +6,7 @@ from pymongo.errors import DuplicateKeyError
 import uuid
 
 from ..schemas.job import JobCreate, JobUpdate, JobStatusPatch
-from ..core.dependencies import require_admin, require_staff
+from ..core.dependencies import require_admin, require_staff, get_org_scope, org_filter
 from ..db.database import get_db
 from ..utils.job_number import next_job_number
 from ..utils.serializers import dump_job
@@ -39,17 +39,17 @@ def coerce_datetime_value(value):
 
 # ✅ Create Job
 @router.post("", status_code=201)
-async def create_job(payload: JobCreate, current_user: dict = Depends(require_staff)):
+async def create_job(payload: JobCreate, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
 
     # Validate client
-    client = await db.clients.find_one({"uuid": payload.client_id})
+    client = await db.clients.find_one({"uuid": payload.client_id, **org_filter(scope)})
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
     manufacturer_id = normalize_optional_string(payload.manufacturer_id)
     if manufacturer_id:
-        manufacturer = await db.manufacturers.find_one({"uuid": manufacturer_id, "is_deleted": False})
+        manufacturer = await db.manufacturers.find_one({"uuid": manufacturer_id, "is_deleted": False, **org_filter(scope)})
         if not manufacturer:
             raise HTTPException(status_code=404, detail="Manufacturer not found")
 
@@ -61,6 +61,7 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
 
     doc = {
         "uuid": str(uuid.uuid4()),
+        "organization_id": scope,
         "job_number": job_no,
         "client_id": payload.client_id,
         "item_type": payload.item_type,
@@ -102,17 +103,18 @@ async def create_job(payload: JobCreate, current_user: dict = Depends(require_st
 
 # ✅ Upcoming Deliveries
 @router.get("/upcoming-deliveries")
-async def upcoming_deliveries(days: int = Query(7), current_user: dict = Depends(require_staff)):
+async def upcoming_deliveries(days: int = Query(7), current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     now = datetime.utcnow()
     # Find jobs where expected_delivery_date is within next N days
     from datetime import timedelta
     future = now + timedelta(days=days)
-    
+
     filt = {
         "is_deleted": False,
         "status": {"$ne": "completed"},
-        "expected_delivery_date": {"$gte": now, "$lte": future}
+        "expected_delivery_date": {"$gte": now, "$lte": future},
+        **org_filter(scope),
     }
     
     cursor = db.jobs.find(filt).sort([("expected_delivery_date", 1)])
@@ -123,6 +125,7 @@ async def upcoming_deliveries(days: int = Query(7), current_user: dict = Depends
 @router.get("")
 async def list_jobs(
     current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
     status: Optional[str] = None,
     job_type: Optional[str] = None,
     page: int = 1,
@@ -131,7 +134,7 @@ async def list_jobs(
     order: Literal["asc", "desc"] = "desc",
 ):
     db = await get_db()
-    filt = {"is_deleted": False}
+    filt = {"is_deleted": False, **org_filter(scope)}
     if status:
         filt["status"] = status
     if job_type:
@@ -171,18 +174,18 @@ async def list_jobs(
 
 # ✅ Get Single Job by UUID
 @router.get("get-job-details/{uuid}")
-async def get_job(uuid: str, current_user: dict = Depends(require_staff)):
+async def get_job(uuid: str, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
     return dump_job(doc)
 
 # ✅ Update Job Info
 @router.put("/{uuid}")
-async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends(require_staff)):
+async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
 
@@ -200,7 +203,7 @@ async def update_job(uuid: str, payload: JobUpdate, current_user: dict = Depends
     if payload.manufacturer_id is not None:
         manufacturer_id = normalize_optional_string(payload.manufacturer_id)
         if manufacturer_id:
-            manufacturer = await db.manufacturers.find_one({"uuid": manufacturer_id, "is_deleted": False})
+            manufacturer = await db.manufacturers.find_one({"uuid": manufacturer_id, "is_deleted": False, **org_filter(scope)})
             if not manufacturer:
                 raise HTTPException(status_code=404, detail="Manufacturer not found")
         updates["manufacturer_id"] = manufacturer_id
@@ -221,10 +224,11 @@ async def update_stage_progress(
     uuid: str,
     stage: Literal["qa", "rfd", "photography"],
     status: Literal["pending", "in_progress", "done"],
-    current_user: dict = Depends(require_staff)
+    current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
 
@@ -277,10 +281,11 @@ async def update_stage_progress(
 async def update_job_status(
     uuid: str,
     payload: JobStatusPatch,
-    current_user: dict = Depends(require_staff)
+    current_user: dict = Depends(require_staff),
+    scope: Optional[str] = Depends(get_org_scope),
 ):
     db = await get_db()
-    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
 
@@ -293,9 +298,9 @@ async def update_job_status(
 
 # ✅ Soft Delete
 @router.delete("/{uuid}")
-async def delete_job(uuid: str, current_user: dict = Depends(require_admin)):
+async def delete_job(uuid: str, current_user: dict = Depends(require_admin), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False})
+    doc = await db.jobs.find_one({"uuid": uuid, "is_deleted": False, **org_filter(scope)})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not Found")
     await db.jobs.update_one(
@@ -306,10 +311,10 @@ async def delete_job(uuid: str, current_user: dict = Depends(require_admin)):
 
 # ✅ Stats: Overview
 @router.get("/stats")
-async def job_stats(current_user: dict = Depends(require_staff)):
+async def job_stats(current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **org_filter(scope)}},
         {"$facet": {
             "total": [{"$count": "count"}],
             "by_status": [{"$group": {"_id": "$status", "count": {"$count": {}}}}],
@@ -333,10 +338,10 @@ async def job_stats(current_user: dict = Depends(require_staff)):
 
 # ✅ Stats: Daily Job Count
 @router.get("/stats/daily")
-async def job_stats_daily(current_user: dict = Depends(require_staff)):
+async def job_stats_daily(current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
     pipeline = [
-        {"$match": {"is_deleted": False}},
+        {"$match": {"is_deleted": False, **org_filter(scope)}},
         {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$count": {}}}},
         {"$sort": {"_id": 1}},
     ]
@@ -349,11 +354,11 @@ from ..utils.pdf_generator import generate_jobs_pdf
 from typing import List
 
 @router.post("/pdf")
-async def download_jobs_pdf(job_uuids: List[str], current_user: dict = Depends(require_staff)):
+async def download_jobs_pdf(job_uuids: List[str], current_user: dict = Depends(require_staff), scope: Optional[str] = Depends(get_org_scope)):
     db = await get_db()
-    
+
     # 1. Fetch Jobs
-    cursor = db.jobs.find({"uuid": {"$in": job_uuids}, "is_deleted": False})
+    cursor = db.jobs.find({"uuid": {"$in": job_uuids}, "is_deleted": False, **org_filter(scope)})
     jobs = [dump_job(doc) async for doc in cursor]
     
     if not jobs:
