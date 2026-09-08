@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.db.database import get_db
 
 TEMPLATES = {
-    "single_mounded": "One {metal} {category} studded with {gemstone_piece} Natural {gemstone} and Colour Stones.",
+    "single_mounded": "One {metal} {category} studded with {gemstone_piece} {gemstone} and Colour Stones.",
     "double_mounded": "One {metal} {category} studded with {primary_gemstone_piece} Natural {primary_gemstone} and {secondary_gemstone} and Colour Stones.",
 }
 

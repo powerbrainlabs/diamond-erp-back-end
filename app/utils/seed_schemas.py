@@ -1970,7 +1970,7 @@ CATEGORY_SCHEMAS = [{'uuid': '7215f0c2-2989-4c93-a858-d4ab2c93b761',
   'name': 'Single Mounted Jewellery Certificate',
   'group': 'single_mounded',
   'description': 'Single gemstone in setting',
-  'description_template': 'One {metal} {category} studded with {gemstone_piece} Natural '
+  'description_template': 'One {metal} {category} studded with {gemstone_piece} '
                           '{gemstone}.',
   'fields': [{'field_id': '76455483-477f-48a5-aa74-de25d182ec79',
               'label': 'Gemstone',
