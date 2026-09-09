@@ -5,7 +5,7 @@ FastAPI backend application for the Diamond ERP system. n
 
 ## Features
 
-- FastAPI REST API
+- FastAPI REST API 
 - MongoDB database
 - MinIO object storage
 - JWT authentication
