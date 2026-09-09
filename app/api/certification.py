@@ -16,6 +16,7 @@ from ..utils.minio_helpers import get_presigned_url
 from ..utils.serializers import serialize_mongo_doc
 from ..utils.cert_numbering import next_certificate_number
 from ..utils.template_renderer import render_description_template
+from ..utils.certificate_schema import legacy_mounted_schema
 
 router = APIRouter(prefix="/api/certifications", tags=["Certifications"])
 
@@ -538,7 +539,12 @@ async def list_certifications(
     )
 
     items = []
+    schema_cache = {}
     async for doc in cursor:
+        # Resolve the legacy mounted spelling for this response only.
+        legacy_schema = await legacy_mounted_schema(db, doc, schema_cache)
+        if legacy_schema:
+            doc["category_id"] = legacy_schema["uuid"]
         # Join with clients
         client = await db.clients.find_one({"uuid": doc["client_id"], "is_deleted": False})
         doc["client"] = {"id": client["uuid"], "name": client["name"]} if client else None
@@ -710,6 +716,10 @@ async def get_certification(uuid: str):
         "name": client["name"]
     } if client else None
 
+    # Resolve the legacy mounted spelling without updating the database.
+    legacy_schema = await legacy_mounted_schema(db, doc, {})
+    if legacy_schema:
+        doc["category_id"] = legacy_schema["uuid"]
     # Join with category schema (for field definitions and labels)
     if doc.get("category_id"):
         schema = await db.category_schemas.find_one({
@@ -805,12 +815,16 @@ async def download_certificates_pdf(payload: DownloadPdfPayload):
     schema_map = {schema["uuid"]: serialize_mongo_doc(schema) for schema in schemas}
 
     certs = []
+    schema_cache = {}
     for cert_uuid in payload.uuids:
         doc = docs_by_uuid.get(cert_uuid)
         if not doc:
             continue
         schema_uuid = doc.get("schema_uuid") or doc.get("category_uuid") or doc.get("category_id")
         schema = schema_map.get(schema_uuid)
+        if schema is None:
+            legacy_schema = await legacy_mounted_schema(db, doc, schema_cache)
+            schema = serialize_mongo_doc(legacy_schema) if legacy_schema else None
         if schema:
             doc["schema"] = schema
             generated_description = _render_certificate_description(schema, doc.get("fields", {}))
