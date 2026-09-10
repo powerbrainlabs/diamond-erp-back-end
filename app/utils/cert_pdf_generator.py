@@ -608,8 +608,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4mm;
-  width: 177mm;
-  margin-left: 16.5mm;
+  width: 177.8mm;
+  margin-left: 16.1mm;
   margin-top: 2mm;
   align-items: flex-start;
 }
@@ -617,7 +617,7 @@ body {
 .print-row {
   display: flex;
   flex-direction: row;
-  gap: 3mm;
+  gap: 4mm;
   justify-content: flex-start;
   align-items: flex-start;
   width: 100%;
@@ -627,6 +627,7 @@ body {
   background-color: white;
   width: 8.69cm;
   height: 5.5cm;
+  flex-shrink: 0;
   padding: 0;
   border-top: 1px solid transparent;
   border-left: 1px solid transparent;
@@ -1077,7 +1078,7 @@ def _build_html(certs: List[Dict[str, Any]], img_map: Dict[str, str] = {}, inclu
                 if len(pair) == 2:
                     row_html = _render_card_back(pair[1], img_map) + _render_card_back(pair[0], img_map)
                 else:
-                    row_html = '<div style="width:8.6cm;height:5.5cm;flex-shrink:0"></div>' + _render_card_back(pair[0], img_map)
+                    row_html = '<div style="width:8.69cm;height:5.5cm;flex-shrink:0"></div>' + _render_card_back(pair[0], img_map)
                 back_rows.append(f'<div class="print-row">{row_html}</div>')
             pages_html += f'<div class="page"><div class="print-grid">{"".join(back_rows)}</div></div>'
 
