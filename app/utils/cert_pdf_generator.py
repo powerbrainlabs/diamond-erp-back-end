@@ -628,8 +628,8 @@ body {
   width: 8.69cm;
   height: 5.5cm;
   padding: 0;
-  border-top: 1px dotted #2b1fb4;
-  border-left: 1px dotted #2b1fb4;
+  border-top: 1px solid transparent;
+  border-left: 1px solid transparent;
   border-right: none;
   border-bottom: none;
   box-sizing: border-box;
@@ -638,6 +638,12 @@ body {
   page-break-inside: avoid;
   overflow: hidden;
   contain: paint;
+}
+
+/* Keep cutting guides on the back (even pages), preserving front spacing. */
+.cert-card.back-card {
+  border-top: 1px dotted #2b1fb4;
+  border-left: 1px dotted #2b1fb4;
 }
 
 .card-header {
