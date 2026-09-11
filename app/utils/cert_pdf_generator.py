@@ -608,8 +608,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4mm;
-  width: 177.8mm;
-  margin-left: 16.1mm;
+  /* Match old.pdf's 15.75pt center cutting gap without resizing cards. */
+  --certificate-column-gap: 15.75pt;
+  width: calc(8.69cm * 2 + var(--certificate-column-gap));
+  margin-inline: auto;
   margin-top: 2mm;
   align-items: flex-start;
 }
@@ -617,7 +619,7 @@ body {
 .print-row {
   display: flex;
   flex-direction: row;
-  gap: 4mm;
+  gap: var(--certificate-column-gap);
   justify-content: flex-start;
   align-items: flex-start;
   width: 100%;
