@@ -2375,15 +2375,23 @@ ORGANIZATION = {'official_name': 'GAC',
 
 
 async def seed_default_attributes(db):
-    """Upsert attribute/dropdown values by (group, type, name)."""
+    """Seed missing attributes, preserving existing UUIDs and edited values."""
     now = datetime.utcnow()
     for attr in ATTRIBUTES:
         await db.attributes.update_one(
-            {"group": attr["group"], "type": attr["type"], "name": attr["name"]},
+            {
+                "$or": [
+                    {"uuid": attr["uuid"]},
+                    {"group": attr["group"], "type": attr["type"], "name": attr["name"]},
+                ]
+            },
             {
                 "$set": {"updated_at": now},
                 "$setOnInsert": {
                     "uuid": attr["uuid"],
+                    "group": attr["group"],
+                    "type": attr["type"],
+                    "name": attr["name"],
                     "is_deleted": False,
                     "organization_id": ORG_ID,
                     "created_at": now,
