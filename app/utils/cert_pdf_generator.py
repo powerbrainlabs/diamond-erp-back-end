@@ -483,7 +483,7 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
 
             # sg_ri_hardness composite: render as 3 separate rows
             if fname == 'sg_ri_hardness' and isinstance(raw, dict):
-                for sub_key, sub_label in (('sg', 'SG'), ('hardness', 'Hardness')):
+                for sub_key, sub_label in (('sg', 'SG'), ('ri', 'RI'), ('hardness', 'Hardness')):
                     sub_val = raw.get(sub_key, '')
                     if not sub_val:
                         continue
