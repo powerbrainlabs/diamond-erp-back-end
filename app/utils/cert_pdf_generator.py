@@ -100,10 +100,16 @@ def _qr_png(cert_uuid: str) -> bytes:
     on qrserver.com while waiting for networkidle. Generating locally takes
     ~5ms per code and removes the external dependency from the render path.
     """
+    url = _certificate_public_url(cert_uuid)
+    # Match the legacy certificate's version-10 / H pattern and four-module
+    # white border. Within the existing 49px slot, the border makes the inked
+    # QR smaller without moving the header or changing the verification URL.
+    # Let unusually long deployment URLs grow beyond version 10 if needed.
+    qr = segno.make(url, error='h', micro=False, boost_error=False)
+    if qr.version < 10:
+        qr = segno.make(url, version=10, error='h', boost_error=False)
     buf = io.BytesIO()
-    segno.make(_certificate_public_url(cert_uuid), error='m').save(
-        buf, kind='png', scale=4, border=1
-    )
+    qr.save(buf, kind='png', scale=4, border=4)
     return buf.getvalue()
 
 CERTIFICATE_FIELD_CONFIG = {
