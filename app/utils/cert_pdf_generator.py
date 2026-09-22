@@ -714,8 +714,8 @@ body {
   height: 55.5px;
   object-fit: contain;
   flex-shrink: 0;
-  /* Align the visible QR bottom (inside its white border) with the brown rule. */
-  margin-top: 6.5px;
+  /* Keep the enlarged legacy-size QR's bottom aligned with the brown rule. */
+  margin-top: 0;
   margin-right: 2px;
   margin-left: 6px;
   align-self: flex-start;
