@@ -657,7 +657,7 @@ body {
 
 .card-header {
   position: relative;
-  --brown-line-trim-width: 50px;
+  --brown-line-trim-width: 44px;
   --brown-line-trim-top: 48px;
   --brown-line-trim-height: 9px;
 }
@@ -693,7 +693,7 @@ body {
 .header-right {
   position: absolute;
   top: 3.5px;
-  right: 10px;
+  right: 4px;
   display: flex;
   align-items: flex-start;
   gap: 0;
