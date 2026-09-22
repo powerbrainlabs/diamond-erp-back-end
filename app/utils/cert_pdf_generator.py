@@ -102,8 +102,8 @@ def _qr_png(cert_uuid: str) -> bytes:
     """
     url = _certificate_public_url(cert_uuid)
     # Match the legacy certificate's version-10 / H pattern and four-module
-    # white border. Within the existing 49px slot, the border makes the inked
-    # QR smaller without moving the header or changing the verification URL.
+    # white border. The PDF renders it in the legacy 55.5px slot so the inked
+    # QR remains as large and scannable as it was in the old certificates.
     # Let unusually long deployment URLs grow beyond version 10 if needed.
     qr = segno.make(url, error='h', micro=False, boost_error=False)
     if qr.version < 10:
@@ -710,8 +710,8 @@ body {
 }
 
 .qr-code {
-  width: 49px;
-  height: 49px;
+  width: 55.5px;
+  height: 55.5px;
   object-fit: contain;
   flex-shrink: 0;
   /* Align the visible QR bottom (inside its white border) with the brown rule. */
