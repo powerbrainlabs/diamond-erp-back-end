@@ -15,6 +15,7 @@ import uuid as uuid_lib
 from ..core.dependencies import require_super_admin, require_admin, require_staff
 from ..db.database import get_db
 from ..utils.serializers import serialize_mongo_doc
+from ..utils.gemstone_properties import sync_gemstone_properties
 
 router = APIRouter(prefix="/api/dynamic-categories", tags=["Dynamic Categories"])
 
@@ -190,6 +191,7 @@ async def create_attribute(
             doc[field] = payload[field]
     
     await db.attributes.insert_one(doc)
+    await sync_gemstone_properties(db, doc, payload)
     return serialize_attribute(doc)
 
 
@@ -233,6 +235,7 @@ async def update_attribute(
             update_data[field] = payload[field]
     
     await db.attributes.update_one({"uuid": uuid}, {"$set": update_data})
+    await sync_gemstone_properties(db, {**doc, "name": name}, payload)
     
     updated = await db.attributes.find_one({"uuid": uuid})
     return serialize_attribute(updated)

@@ -6,6 +6,7 @@ import uuid
 
 from ..core.dependencies import require_admin, require_staff
 from ..db.database import get_db
+from ..utils.gemstone_properties import sync_gemstone_properties
 
 router = APIRouter(prefix="/api/categories", tags=["Categories (Deprecated)"])
 
@@ -85,6 +86,7 @@ async def create_attribute(
                 doc[field] = payload[field]
 
     await db.attributes.insert_one(doc)
+    await sync_gemstone_properties(db, doc, doc)
     return serialize_attribute(doc)
 
 
@@ -153,6 +155,7 @@ async def update_attribute(uuid: str, payload: dict, current_user: dict = Depend
 
     updates["updated_at"] = datetime.utcnow()
     await db.attributes.update_one({"_id": doc["_id"]}, {"$set": updates})
+    await sync_gemstone_properties(db, {**doc, **updates}, updates)
     updated = await db.attributes.find_one({"_id": doc["_id"]})
     return serialize_attribute(updated)
 
