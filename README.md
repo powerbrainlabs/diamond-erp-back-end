@@ -1,7 +1,7 @@
 ﻿# Diamond ERP Backend
 
 FastAPI backend application for the Diamond ERP system. n
-
+ 
 
 ## Features
 
