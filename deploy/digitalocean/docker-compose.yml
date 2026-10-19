@@ -1,0 +1,28 @@
+# Production stack on the DigitalOcean droplet (installed at /opt/diamond-erp/deploy).
+# Image tags come from .env next to this file, which deploy.sh rewrites on each deploy.
+# The nginx proxy (diamond-erp-preview-proxy) and the migration container are managed separately.
+name: diamond-erp
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is not set}
+    container_name: diamond-erp-backend
+    restart: unless-stopped
+    env_file: /opt/diamond-erp/backend.env
+    ports:
+      - "127.0.0.1:8081:8080"
+    logging: *logging
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is not set}
+    container_name: diamond-erp-frontend-preview
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:3000"
+    logging: *logging
