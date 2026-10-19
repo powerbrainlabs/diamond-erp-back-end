@@ -119,3 +119,14 @@ diamond-erp-back-end/
 ├── docker-compose.yml
 └── requirements.txt
 ```
+
+## Deployment (DigitalOcean)
+
+Every push to `main` runs [`.github/workflows/deploy-do.yml`](.github/workflows/deploy-do.yml):
+
+1. Builds the Docker image and pushes it to `ghcr.io/powerbrainlabs/diamond-erp-backend:<sha>`.
+2. SSHes to the droplet as the restricted `deploy` user, which runs [`deploy/digitalocean/deploy.sh`](deploy/digitalocean/deploy.sh).
+3. The script pulls the image, restarts the `backend` service with docker compose, checks `/health`, and rolls back to the previous image if the check fails.
+
+Required repository secrets: `DO_HOST`, `DO_SSH_KEY`, `DO_KNOWN_HOSTS`.
+Runtime config lives on the droplet in `/opt/diamond-erp/backend.env`.
