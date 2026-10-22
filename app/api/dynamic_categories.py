@@ -11,10 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from datetime import datetime
 import uuid as uuid_lib
+import re
 
 from ..core.dependencies import require_super_admin, require_admin, require_staff
 from ..db.database import get_db
 from ..utils.serializers import serialize_mongo_doc
+from ..utils.shared_management_options import share_new_management_option
 
 router = APIRouter(prefix="/api/dynamic-categories", tags=["Dynamic Categories"])
 
@@ -103,6 +105,19 @@ async def get_type_fields(
                 "is_required": field.get("is_required", False),
             })
     
+    # Older single-mounted schemas omit color; expose its shared management list
+    # without changing certificate layouts or making a new certificate field required.
+    if type_slug == "single_mounded" and not any(f["field_name"] == "color" for f in fields):
+        fields.append({
+            "field_id": "shared_color",
+            "field_name": "color",
+            "label": "Color",
+            "field_type": "creatable_select",
+            "display_order": max((f["display_order"] for f in fields), default=0) + 1,
+            "validation": {},
+            "is_required": False,
+        })
+
     # Sort by display_order
     fields.sort(key=lambda x: x.get("display_order", 0))
     
@@ -155,6 +170,7 @@ async def create_attribute(
     
     # Required field
     name = payload.get("name")
+    name = name.strip() if isinstance(name, str) else ""
     if not name:
         raise HTTPException(status_code=422, detail="Field 'name' is required")
     
@@ -162,7 +178,7 @@ async def create_attribute(
     existing = await db.attributes.find_one({
         "group": group,
         "type": field_type,
-        "name": {"$regex": f"^{name}$", "$options": "i"},
+        "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"},
         "is_deleted": False
     })
     if existing:
@@ -190,6 +206,7 @@ async def create_attribute(
             doc[field] = payload[field]
     
     await db.attributes.insert_one(doc)
+    await share_new_management_option(db, doc)
     return serialize_attribute(doc)
 
 
@@ -208,6 +225,7 @@ async def update_attribute(
         raise HTTPException(status_code=404, detail="Attribute not found")
     
     name = payload.get("name")
+    name = name.strip() if isinstance(name, str) else ""
     if not name:
         raise HTTPException(status_code=422, detail="Field 'name' is required")
     
@@ -215,7 +233,7 @@ async def update_attribute(
     existing = await db.attributes.find_one({
         "group": doc["group"],
         "type": doc["type"],
-        "name": {"$regex": f"^{name}$", "$options": "i"},
+        "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"},
         "uuid": {"$ne": uuid},
         "is_deleted": False
     })
