@@ -610,10 +610,14 @@ async def get_form_schema(category_uuid: str):
         # For dropdown, radio, and creatable_select fields, load options from attributes
         if field.get("field_type") in {"dropdown", "radio", "creatable_select"}:
             field_type_key = field.get("field_name")
-            # Fetch attributes for this group/field type
+            # These fields are shown only for a natural-diamond primary stone.
+            # Use Diamond Jewellery management as their single option source.
+            diamond_grading = group == "double_mounded" and field_type_key in {"cut", "clarity", "colour", "color"}
+            option_group = "single_diamond" if diamond_grading else group
+            option_type = "color" if diamond_grading and field_type_key == "colour" else field_type_key
             cursor = db.attributes.find({
-                "group": group,
-                "type": field_type_key,
+                "group": option_group,
+                "type": option_type,
                 "is_deleted": False
             }).sort([("name", 1)])
 
@@ -621,7 +625,7 @@ async def get_form_schema(category_uuid: str):
             options = [doc.get("name") for doc in attrs]
 
             # If we found attributes, use them; otherwise keep the schema's default options
-            if options:
+            if options or diamond_grading:
                 enriched_field["options"] = options
                 # Include extra properties (hardness, ri, sg) if any attribute has them
                 extra_props = ["hardness", "ri", "sg"]
