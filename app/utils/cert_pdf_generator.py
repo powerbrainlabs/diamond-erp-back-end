@@ -2,6 +2,7 @@
 Certificate PDF generator using Playwright (Chromium).
 Renders the same HTML/CSS as the React frontend for pixel-perfect output.
 """
+from .gemstone_conditions import matches_condition
 import asyncio
 import atexit
 import base64
@@ -462,9 +463,9 @@ def _render_card_front(cert: Dict[str, Any], img_map: Dict[str, str] = {}) -> st
                 return True
             dep_val = str(fields.get(cl['show_if_field'], '') or '').strip().lower()
             if 'show_if_not_value' in cl:
-                return dep_val != str(cl['show_if_not_value']).strip().lower()
+                return not matches_condition(cl['show_if_field'], dep_val, cl['show_if_not_value'])
             if 'show_if_value' in cl:
-                return dep_val == str(cl['show_if_value']).strip().lower()
+                return matches_condition(cl['show_if_field'], dep_val, cl['show_if_value'])
             return True
 
         sorted_fields = [f for f in sorted_fields if _passes_conditional(f)]
