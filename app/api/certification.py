@@ -15,6 +15,7 @@ from ..core.dependencies import require_staff
 from ..utils.minio_helpers import get_presigned_url
 from ..utils.serializers import serialize_mongo_doc
 from ..utils.cert_numbering import next_certificate_number
+from ..utils.certificate_lookup import certificate_number_key
 from ..utils.template_renderer import render_description_template
 from ..utils.certificate_schema import legacy_mounted_schema
 
@@ -689,6 +690,28 @@ async def certification_stats_daily(current_user: dict = Depends(require_staff))
     ]
     res = await db.certifications.aggregate(pipeline).to_list(None)
     return {"daily": res}
+
+
+# ✅ Resolve a certificate number (old Firebase QR codes) to its UUID
+@router.get("/by-number/{certificate_number}")
+async def get_certification_uuid_by_number(certificate_number: str):
+    """
+    Public endpoint. Old QR codes carry only the certificate number; the page
+    they open uses this to find the certificate, then shows /certificate/{uuid}.
+    """
+    key = certificate_number_key(certificate_number)
+    if not key:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    db = await get_db()
+    doc = await db.certifications.find_one(
+        {"certificate_number": key, "is_deleted": False, "is_published": True},
+        {"uuid": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    return {"uuid": doc["uuid"]}
 
 
 # ✅ Get Single Certificate by UUID
